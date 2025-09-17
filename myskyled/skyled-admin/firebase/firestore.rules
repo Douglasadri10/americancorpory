@@ -1,0 +1,44 @@
+// firestore.rules
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() { return request.auth != null; }
+
+    // === Clients ===
+    match /clients/{clientId} {
+      allow read, write: if isSignedIn();
+    }
+
+    // === Client Notes (anotações por cliente) ===
+    match /clientNotes/{noteId} {
+      // Autenticados podem ler e criar notas
+      allow read, create: if isSignedIn();
+      // Só o autor pode editar/deletar a própria nota
+      allow update, delete: if isSignedIn() && request.auth.uid == resource.data.createdByUid;
+    }
+
+    // === Estimates e suas linhas ===
+    match /estimates/{estId} {
+      // Qualquer usuário autenticado pode ler/criar
+      allow read, create: if isSignedIn();
+
+      // Atualização: criador pode tudo; outros só podem mudar status/html
+      allow update: if isSignedIn() && (
+        request.auth.uid == resource.data.createdByUid ||
+        request.resource.data.diff(resource.data).changedKeys().hasOnly(["status", "html"])
+      );
+
+      // Deletar: apenas o criador
+      allow delete: if isSignedIn() && request.auth.uid == resource.data.createdByUid;
+
+      // Subcoleção de linhas
+      match /estimateLines/{lineId} {
+        allow read, create: if isSignedIn();
+        allow update, delete: if isSignedIn();
+      }
+    }
+
+    // (Outras coleções ficam negadas por padrão)
+  }
+}
