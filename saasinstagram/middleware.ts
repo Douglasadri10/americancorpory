@@ -51,7 +51,7 @@ function applySecurityHeaders(response: NextResponse): NextResponse {
       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://accounts.google.com",
       "font-src 'self' https://fonts.gstatic.com",
       "img-src 'self' data: blob: https://graph.facebook.com https://*.fbcdn.net https://*.cdninstagram.com https://lh3.googleusercontent.com https://lh4.googleusercontent.com https://lh5.googleusercontent.com https://lh6.googleusercontent.com https://*.googleusercontent.com",
-      "connect-src 'self' https://*.firebaseapp.com https://*.googleapis.com https://api.stripe.com https://graph.facebook.com wss://*.firebaseio.com https://accounts.google.com",
+      "connect-src 'self' https://*.firebaseapp.com https://*.googleapis.com https://api.stripe.com https://graph.facebook.com wss://*.firebaseio.com https://accounts.google.com https://*.sentry.io https://*.ingest.sentry.io https://*.ingest.us.sentry.io",
       "frame-src https://js.stripe.com https://www.facebook.com https://accounts.google.com",
       "object-src 'none'",
       "base-uri 'self'",
