@@ -1,0 +1,189 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,300;0,14..32,400;0,14..32,500;0,14..32,600;0,14..32,700;1,14..32,400&display=swap');
+
+/* ─── Design tokens (light) ─────────────────────────────────── */
+:root {
+  --c-bg:           247 247 248;
+  --c-sidebar:      255 255 255;
+  --c-card:         255 255 255;
+  --c-surface:      243 244 246;
+  --c-border:       229 230 235;
+  --c-border-strong:209 213 219;
+  --c-muted:        243 244 246;
+
+  --c-accent:       124 58 237;
+  --c-accent-hover: 109 40 217;
+  --c-accent-light: 139 92 246;
+  --c-accent-subtle:245 243 255;
+  --c-accent-border:233 213 255;
+
+  --c-text-primary:   17  24  39;
+  --c-text-secondary:107 114 128;
+  --c-text-muted:    156 163 175;
+}
+
+/* ─── Dark mode overrides ────────────────────────────────────── */
+.dark {
+  --c-bg:           15  15  17;
+  --c-sidebar:      20  20  23;
+  --c-card:         20  20  23;
+  --c-surface:      30  30  36;
+  --c-border:       45  45  54;
+  --c-border-strong:64  64  80;
+  --c-muted:        30  30  36;
+
+  --c-accent:       124 58 237;
+  --c-accent-hover: 109 40 217;
+  --c-accent-light: 139 92 246;
+  --c-accent-subtle: 30  21  48;
+  --c-accent-border: 59  45  94;
+
+  --c-text-primary:  241 241 243;
+  --c-text-secondary:155 155 171;
+  --c-text-muted:    104 104 118;
+}
+
+* {
+  box-sizing: border-box;
+  padding: 0;
+  margin: 0;
+}
+
+html,
+body {
+  max-width: 100vw;
+  overflow-x: hidden;
+  height: 100%;
+}
+
+body {
+  background-color: rgb(var(--c-bg));
+  color: rgb(var(--c-text-primary));
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#__next,
+main {
+  height: 100%;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #d1d5db;
+  border-radius: 10px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #9ca3af;
+}
+
+/* Selection */
+::selection {
+  background-color: rgba(124, 58, 237, 0.12);
+  color: #111827;
+}
+
+/* Focus ring */
+:focus-visible {
+  outline: 2px solid rgba(124, 58, 237, 0.45);
+  outline-offset: 2px;
+}
+
+/* Transitions */
+a,
+button {
+  transition: color 0.12s ease, background-color 0.12s ease, border-color 0.12s ease, opacity 0.12s ease, box-shadow 0.12s ease;
+}
+
+/* Custom utility classes */
+@layer utilities {
+  .text-gradient {
+    background: linear-gradient(135deg, #7c3aed, #a78bfa);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .bg-gradient-brand {
+    background: linear-gradient(135deg, #7c3aed 0%, #4f46e5 100%);
+  }
+
+  .glass {
+    background: rgba(255, 255, 255, 0.85);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+  }
+
+  .shimmer {
+    background: linear-gradient(
+      90deg,
+      rgba(0, 0, 0, 0) 0%,
+      rgba(0, 0, 0, 0.03) 50%,
+      rgba(0, 0, 0, 0) 100%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 2s infinite;
+  }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+/* Input autofill */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus {
+  -webkit-box-shadow: 0 0 0 1000px rgb(var(--c-card)) inset !important;
+  -webkit-text-fill-color: rgb(var(--c-text-primary)) !important;
+  caret-color: rgb(var(--c-text-primary));
+}
+
+/* Dark mode sonner overrides */
+.dark [data-sonner-toaster] {
+  --normal-bg: rgb(var(--c-card));
+  --normal-border: rgb(var(--c-border));
+  --normal-text: rgb(var(--c-text-primary));
+  --success-bg: rgb(var(--c-card));
+  --error-bg: rgb(var(--c-card));
+}
+
+audio {
+  filter: none;
+}
+
+input[type='checkbox'] {
+  accent-color: #7c3aed;
+  width: 14px;
+  height: 14px;
+  cursor: pointer;
+}
+
+input[type='radio'] {
+  accent-color: #7c3aed;
+}
+
+/* Sonner toast overrides */
+[data-sonner-toaster] {
+  --normal-bg: #ffffff;
+  --normal-border: #e5e6eb;
+  --normal-text: #111827;
+  --success-bg: #ffffff;
+  --success-border: #059669;
+  --success-text: #059669;
+  --error-bg: #ffffff;
+  --error-border: #dc2626;
+  --error-text: #dc2626;
+}
