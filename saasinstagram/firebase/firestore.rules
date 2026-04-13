@@ -1,0 +1,281 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ─── Helper Functions ─────────────────────────────────────────────────────
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Custom claims (set by Admin SDK)
+    function hasClaim(workspaceId) {
+      return isAuthenticated()
+        && request.auth.token.get('workspaceId', '') == workspaceId;
+    }
+
+    function claimRole() {
+      return request.auth.token.get('role', 'viewer');
+    }
+
+    function isClaimAdmin(workspaceId) {
+      return hasClaim(workspaceId)
+        && (claimRole() == 'owner' || claimRole() == 'admin');
+    }
+
+    // Access check: owner by ownerUid field OR member via custom claim
+    function canRead(workspaceId) {
+      return isAuthenticated()
+        && (hasClaim(workspaceId)
+            || get(/databases/$(database)/documents/workspaces/$(workspaceId)).data.ownerUid == request.auth.uid);
+    }
+
+    function canWrite(workspaceId) {
+      return isAuthenticated()
+        && (isClaimAdmin(workspaceId)
+            || get(/databases/$(database)/documents/workspaces/$(workspaceId)).data.ownerUid == request.auth.uid);
+    }
+
+    // Check if user belongs to the workspace of a document that has workspaceId field
+    function ownsDocument(docWorkspaceId) {
+      return isAuthenticated()
+        && (hasClaim(docWorkspaceId)
+            || get(/databases/$(database)/documents/workspaces/$(docWorkspaceId)).data.ownerUid == request.auth.uid);
+    }
+
+    // ─── Users ────────────────────────────────────────────────────────────────
+
+    match /users/{userId} {
+      allow read: if isAuthenticated() && request.auth.uid == userId;
+      allow write: if isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // ─── Workspaces ───────────────────────────────────────────────────────────
+
+    match /workspaces/{workspaceId} {
+      allow read: if isAuthenticated()
+                  && (resource.data.ownerUid == request.auth.uid
+                      || hasClaim(workspaceId));
+
+      allow create: if isAuthenticated()
+                    && request.resource.data.ownerUid == request.auth.uid;
+
+      allow update: if isAuthenticated()
+                    && (resource.data.ownerUid == request.auth.uid
+                        || isClaimAdmin(workspaceId));
+
+      allow delete: if isAuthenticated()
+                    && resource.data.ownerUid == request.auth.uid;
+
+      // ─── Members subcollection ────────────────────────────────────────────
+      match /members/{memberId} {
+        allow read:            if canRead(workspaceId);
+        allow create, update:  if canWrite(workspaceId);
+        allow delete:          if canWrite(workspaceId);
+      }
+
+      // ─── Channels subcollection ───────────────────────────────────────────
+      match /channels/{channelId} {
+        allow read:            if canRead(workspaceId);
+        allow create, update:  if canWrite(workspaceId);
+        allow delete:          if canWrite(workspaceId);
+      }
+
+      // ─── Leads subcollection ──────────────────────────────────────────────
+      match /leads/{leadId} {
+        allow read, create, update: if canRead(workspaceId);
+        allow delete:               if canWrite(workspaceId);
+      }
+
+      // ─── Automations subcollection ────────────────────────────────────────
+      match /automations/{automationId} {
+        allow read:                      if canRead(workspaceId);
+        allow create, update, delete:    if canWrite(workspaceId);
+      }
+
+      // ─── Appointments subcollection ───────────────────────────────────────
+      match /appointments/{appointmentId} {
+        allow read, create, update: if canRead(workspaceId);
+        allow delete:               if canWrite(workspaceId);
+      }
+
+      // ─── Subscriptions subcollection ──────────────────────────────────────
+      match /subscriptions/{subscriptionId} {
+        allow read:  if canRead(workspaceId);
+        allow write: if false; // Cloud Functions / Admin SDK only
+      }
+    }
+
+    // ─── Top-level Channels ───────────────────────────────────────────────────
+    // Stored at top-level for collectionGroup queries; access requires workspace ownership
+
+    match /channels/{channelId} {
+      allow read:   if isAuthenticated()
+                    && resource != null
+                    && ownsDocument(resource.data.workspaceId);
+      allow create: if isAuthenticated()
+                    && ownsDocument(request.resource.data.workspaceId);
+      allow update: if isAuthenticated()
+                    && resource != null
+                    && ownsDocument(resource.data.workspaceId);
+      allow delete: if isAuthenticated()
+                    && resource != null
+                    && ownsDocument(resource.data.workspaceId);
+    }
+
+    // ─── Top-level Conversations ──────────────────────────────────────────────
+
+    match /conversations/{conversationId} {
+      allow read:   if isAuthenticated()
+                    && resource != null
+                    && ownsDocument(resource.data.workspaceId);
+      allow create: if isAuthenticated()
+                    && ownsDocument(request.resource.data.workspaceId);
+      allow update: if isAuthenticated()
+                    && resource != null
+                    && ownsDocument(resource.data.workspaceId);
+      allow delete: if false; // Never delete conversations
+    }
+
+    // ─── Top-level Messages ───────────────────────────────────────────────────
+
+    match /messages/{messageId} {
+      allow read:   if isAuthenticated()
+                    && resource != null
+                    && ownsDocument(resource.data.workspaceId);
+      allow create: if isAuthenticated()
+                    && ownsDocument(request.resource.data.workspaceId);
+      allow update: if isAuthenticated()
+                    && resource != null
+                    && ownsDocument(resource.data.workspaceId);
+      allow delete: if false;
+    }
+
+    // ─── Top-level Automations ────────────────────────────────────────────────
+
+    match /automations/{automationId} {
+      allow read:   if isAuthenticated()
+                    && resource != null
+                    && ownsDocument(resource.data.workspaceId);
+      allow create: if isAuthenticated()
+                    && ownsDocument(request.resource.data.workspaceId);
+      allow update: if isAuthenticated()
+                    && resource != null
+                    && ownsDocument(resource.data.workspaceId);
+      allow delete: if isAuthenticated()
+                    && resource != null
+                    && ownsDocument(resource.data.workspaceId);
+    }
+
+    // ─── Automation Logs ──────────────────────────────────────────────────────
+
+    match /automationLogs/{logId} {
+      allow read:   if isAuthenticated()
+                    && resource != null
+                    && ownsDocument(resource.data.workspaceId);
+      allow create: if false; // Admin SDK only
+      allow delete: if false;
+    }
+
+    // ─── Top-level Leads ──────────────────────────────────────────────────────
+
+    match /leads/{leadId} {
+      allow read:   if isAuthenticated()
+                    && resource != null
+                    && ownsDocument(resource.data.workspaceId);
+      allow create: if isAuthenticated()
+                    && ownsDocument(request.resource.data.workspaceId);
+      allow update: if isAuthenticated()
+                    && resource != null
+                    && ownsDocument(resource.data.workspaceId);
+      allow delete: if isAuthenticated()
+                    && resource != null
+                    && ownsDocument(resource.data.workspaceId);
+    }
+
+    // ─── Top-level Appointments ───────────────────────────────────────────────
+
+    match /appointments/{appointmentId} {
+      allow read:   if isAuthenticated()
+                    && resource != null
+                    && ownsDocument(resource.data.workspaceId);
+      allow create: if isAuthenticated()
+                    && ownsDocument(request.resource.data.workspaceId);
+      allow update: if isAuthenticated()
+                    && resource != null
+                    && ownsDocument(resource.data.workspaceId);
+      allow delete: if false; // Use status: cancelled instead
+    }
+
+    // ─── Workspace Invites ────────────────────────────────────────────────────
+
+    match /workspaceInvites/{inviteId} {
+      // Anyone authenticated can read an invite (needed to accept it via token link)
+      allow read: if isAuthenticated();
+      // Only workspace owners/admins can create invites
+      allow create: if isAuthenticated()
+                    && ownsDocument(request.resource.data.workspaceId);
+      // Only the invitee or workspace admin can update (accept/decline)
+      allow update: if isAuthenticated()
+                    && (ownsDocument(resource.data.workspaceId)
+                        || resource.data.email == request.auth.token.email);
+      allow delete: if isAuthenticated()
+                    && ownsDocument(resource.data.workspaceId);
+    }
+
+    // ─── Knowledge Blocks ─────────────────────────────────────────────────────
+
+    match /knowledgeBlocks/{blockId} {
+      allow read:   if isAuthenticated()
+                    && resource != null
+                    && ownsDocument(resource.data.workspaceId);
+      allow create: if isAuthenticated()
+                    && ownsDocument(request.resource.data.workspaceId);
+      allow update: if isAuthenticated()
+                    && resource != null
+                    && ownsDocument(resource.data.workspaceId);
+      allow delete: if isAuthenticated()
+                    && resource != null
+                    && ownsDocument(resource.data.workspaceId);
+    }
+
+    // ─── Audit Logs ───────────────────────────────────────────────────────────
+
+    match /audit_logs/{logId} {
+      allow read:  if isAuthenticated()
+                   && resource != null
+                   && ownsDocument(resource.data.workspaceId);
+      allow write: if false; // Admin SDK only
+    }
+
+    // ─── Webhook Logs ─────────────────────────────────────────────────────────
+
+    match /webhookLogs/{logId} {
+      allow read:  if false; // Admin SDK only
+      allow write: if false;
+    }
+
+    // ─── Channel Registry (Admin SDK only) ───────────────────────────────────
+    // Global uniqueness registry — prevents same Instagram/Facebook/WhatsApp
+    // account from being linked to multiple HannaAI workspaces simultaneously.
+    // Also enforces 24h cooldown after disconnection.
+
+    match /channelRegistry/{registryId} {
+      allow read, write: if false;
+    }
+
+    // ─── Internal Queues (Admin SDK only) ─────────────────────────────────────
+
+    match /webhookQueue/{queueId} {
+      allow read, write: if false;
+    }
+
+    match /automationQueue/{queueId} {
+      allow read, write: if false;
+    }
+
+    match /aiQueue/{queueId} {
+      allow read, write: if false;
+    }
+  }
+}
