@@ -66,8 +66,10 @@ export function useAuth() {
   useEffect(() => {
     const auth = getFirebaseAuth();
     const unsubscribe = onAuthStateChanged(auth, (user) => {
-      if (user) setClientSessionCookie();
-      else clearClientSessionCookie();
+      // Session cookies are managed by createServerSession/deleteServerSession.
+      // Do NOT call setClientSessionCookie() here — it would set session=1 on top
+      // of the real httpOnly JWT cookie, causing request.cookies.get('session')
+      // to return "1" instead of the JWT on the next server request.
       setState({ user, loading: false, error: null });
     });
 
