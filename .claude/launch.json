@@ -1,0 +1,33 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "transporte-escolar",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "port": 3000,
+      "cwd": "americancorpore/transporte-escolar"
+    },
+    {
+      "name": "skyled-admin",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "port": 3000,
+      "cwd": "myskyled/skyled-admin"
+    },
+    {
+      "name": "saasinstagram",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "port": 3000,
+      "cwd": "saasinstagram"
+    },
+    {
+      "name": "saasinstagram-emulators",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "serve"],
+      "port": 4000,
+      "cwd": "saasinstagram/functions"
+    }
+  ]
+}
