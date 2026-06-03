@@ -20,6 +20,8 @@ const DEFAULT_AI_PROMPT_PT =
 const DEFAULT_AI_PROMPT_EN =
   "You are a professional customer support assistant. Reply in the customer's language, clearly and politely. Keep the language established by the customer unless they ask to switch.";
 
+const DEFAULT_ALERT_RECIPIENT_EMAIL = 'admin@usehanna.com';
+
 export default function SettingsPage() {
   const { user } = useAuth();
   const { workspace, setWorkspace, setLanguage: setGlobalLanguage, isEnglish } = useWorkspaceLocale();
@@ -46,7 +48,14 @@ export default function SettingsPage() {
   // Notification settings
   const [notifNewConv, setNotifNewConv] = useState(true);
   const [notifNewMsg, setNotifNewMsg] = useState(true);
-  const [notifAssigned, setNotifAssigned] = useState(true);
+  const [alertEmailEnabled, setAlertEmailEnabled] = useState(true);
+  const [alertWhatsAppEnabled, setAlertWhatsAppEnabled] = useState(false);
+  const [alertSmsEnabled, setAlertSmsEnabled] = useState(false);
+  const [alertRecipientEmail, setAlertRecipientEmail] = useState('');
+  const [alertRecipientPhone, setAlertRecipientPhone] = useState('');
+  const [alertOnAccountCreated, setAlertOnAccountCreated] = useState(true);
+  const [alertOnLeadWon, setAlertOnLeadWon] = useState(true);
+  const [alertOnSupportTicketOpened, setAlertOnSupportTicketOpened] = useState(true);
 
   // Appearance
   const [theme, setTheme] = useState<'dark' | 'dim' | 'system'>('dim');
@@ -97,15 +106,14 @@ export default function SettingsPage() {
     ? ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
     : ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'];
 
-  // Load workspace + existing settings on mount
+  // Load workspace + existing settings on mount — depends on `user` so it re-runs
+  // when Firebase Auth restores the session, avoiding a race with auth.currentUser.
   useEffect(() => {
-    const auth = getFirebaseAuth();
-    const firebaseUser = auth.currentUser;
-    if (!firebaseUser) return;
+    if (!user) return;
     const cached = localStorage.getItem('currentWorkspaceId');
     const workspaceQuery = cached ? `?workspaceId=${encodeURIComponent(cached)}` : '';
 
-    firebaseUser.getIdToken().then((idToken) =>
+    user.getIdToken().then((idToken) =>
       fetch(`/api/workspace/me${workspaceQuery}`, { headers: { Authorization: `Bearer ${idToken}` } })
         .then((r) => r.json())
         .then((data: { workspace?: { id: string; name: string; settings?: Record<string, unknown> } }) => {
@@ -137,11 +145,31 @@ export default function SettingsPage() {
             const notifications = s.notifications as {
               newConversation?: boolean;
               newMessage?: boolean;
-              assignedToMe?: boolean;
+              alertChannels?: {
+                email?: boolean;
+                whatsapp?: boolean;
+                sms?: boolean;
+              };
+              alertRecipients?: {
+                email?: string;
+                phone?: string;
+              };
+              alertEvents?: {
+                accountCreated?: boolean;
+                leadWon?: boolean;
+                supportTicketOpened?: boolean;
+              };
             } | undefined;
             if (typeof notifications?.newConversation === 'boolean') setNotifNewConv(notifications.newConversation);
             if (typeof notifications?.newMessage === 'boolean') setNotifNewMsg(notifications.newMessage);
-            if (typeof notifications?.assignedToMe === 'boolean') setNotifAssigned(notifications.assignedToMe);
+            if (typeof notifications?.alertChannels?.email === 'boolean') setAlertEmailEnabled(notifications.alertChannels.email);
+            if (typeof notifications?.alertChannels?.whatsapp === 'boolean') setAlertWhatsAppEnabled(notifications.alertChannels.whatsapp);
+            if (typeof notifications?.alertChannels?.sms === 'boolean') setAlertSmsEnabled(notifications.alertChannels.sms);
+            if (typeof notifications?.alertRecipients?.email === 'string') setAlertRecipientEmail(notifications.alertRecipients.email);
+            if (typeof notifications?.alertRecipients?.phone === 'string') setAlertRecipientPhone(notifications.alertRecipients.phone);
+            if (typeof notifications?.alertEvents?.accountCreated === 'boolean') setAlertOnAccountCreated(notifications.alertEvents.accountCreated);
+            if (typeof notifications?.alertEvents?.leadWon === 'boolean') setAlertOnLeadWon(notifications.alertEvents.leadWon);
+            if (typeof notifications?.alertEvents?.supportTicketOpened === 'boolean') setAlertOnSupportTicketOpened(notifications.alertEvents.supportTicketOpened);
           }
           // Check Google Calendar integration
           const integrations = (data.workspace as Record<string, unknown>).integrations as Record<string, unknown> | undefined;
@@ -153,7 +181,7 @@ export default function SettingsPage() {
         })
         .catch(() => null)
     );
-  }, [setWorkspace]);
+  }, [user, setWorkspace]);
 
   useEffect(() => {
     if (!workspace) {
@@ -169,6 +197,20 @@ export default function SettingsPage() {
       setLanguage(workspace.settings.language);
     }
   }, [workspace]);
+
+  useEffect(() => {
+    const normalizedAlertRecipientEmail = alertRecipientEmail.trim().toLowerCase();
+    const normalizedUserEmail = user?.email?.trim().toLowerCase();
+
+    if (!normalizedAlertRecipientEmail) {
+      setAlertRecipientEmail(DEFAULT_ALERT_RECIPIENT_EMAIL);
+      return;
+    }
+
+    if (normalizedUserEmail && normalizedAlertRecipientEmail === normalizedUserEmail) {
+      setAlertRecipientEmail(DEFAULT_ALERT_RECIPIENT_EMAIL);
+    }
+  }, [alertRecipientEmail, user?.email]);
 
   useEffect(() => {
     if (!aiPersonality) {
@@ -195,7 +237,8 @@ export default function SettingsPage() {
   }, []);
 
   const handleSave = async () => {
-    if (!workspaceId) {
+    const id = workspaceId ?? workspace?.id ?? null;
+    if (!id) {
       toast.error(isEnglish ? 'Workspace not found' : 'Workspace não encontrado');
       return;
     }
@@ -219,14 +262,27 @@ export default function SettingsPage() {
         notifications: {
           newConversation: notifNewConv,
           newMessage: notifNewMsg,
-          assignedToMe: notifAssigned,
+          alertChannels: {
+            email: alertEmailEnabled,
+            whatsapp: alertWhatsAppEnabled,
+            sms: alertSmsEnabled,
+          },
+          alertRecipients: {
+            email: alertRecipientEmail.trim() || undefined,
+            phone: alertRecipientPhone.trim() || undefined,
+          },
+          alertEvents: {
+            accountCreated: alertOnAccountCreated,
+            leadWon: alertOnLeadWon,
+            supportTicketOpened: alertOnSupportTicketOpened,
+          },
         },
       };
 
       const res = await fetch('/api/workspace/settings', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
-        body: JSON.stringify({ workspaceId, workspaceName, settings }),
+        body: JSON.stringify({ workspaceId: id, workspaceName, settings }),
       });
 
       if (!res.ok) throw new Error(isEnglish ? 'Failed to save settings' : 'Falha ao salvar');
@@ -250,14 +306,15 @@ export default function SettingsPage() {
   };
 
   const handleConnectGoogle = async () => {
-    if (!workspaceId) return;
+    const id = workspaceId ?? workspace?.id;
+    if (!id) return;
     setGoogleConnecting(true);
     try {
       const auth = getFirebaseAuth();
       const firebaseUser = auth.currentUser;
       if (!firebaseUser) throw new Error('Não autenticado');
       const idToken = await firebaseUser.getIdToken();
-      const res = await fetch(`/api/auth/google?workspaceId=${workspaceId}`, {
+      const res = await fetch(`/api/auth/google?workspaceId=${id}`, {
         headers: { Authorization: `Bearer ${idToken}` },
       });
       const data = await res.json() as { url?: string };
@@ -270,14 +327,15 @@ export default function SettingsPage() {
   };
 
   const handleDisconnectGoogle = async () => {
-    if (!workspaceId) return;
+    const id = workspaceId ?? workspace?.id;
+    if (!id) return;
     setGoogleDisconnecting(true);
     try {
       const auth = getFirebaseAuth();
       const firebaseUser = auth.currentUser;
       if (!firebaseUser) throw new Error('Não autenticado');
       const idToken = await firebaseUser.getIdToken();
-      await fetch(`/api/auth/google/disconnect?workspaceId=${workspaceId}`, {
+      await fetch(`/api/auth/google/disconnect?workspaceId=${id}`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${idToken}` },
       });
@@ -404,7 +462,7 @@ export default function SettingsPage() {
                   {isEnglish ? 'Business hours' : 'Horário de atendimento'}
                 </p>
                 <p className="text-xs text-text-muted">
-                  {isEnglish ? 'Set when your team is available' : 'Defina os horários em que sua equipe está disponível'}
+                  {isEnglish ? 'Set when your business is available' : 'Defina os horários em que seu negócio está disponível'}
                 </p>
               </div>
               <button
@@ -440,25 +498,103 @@ export default function SettingsPage() {
 
       case 'notifications':
         return (
-          <div className="divide-y divide-border">
-            <Toggle
-              value={notifNewConv}
-              onChange={setNotifNewConv}
-              label={isEnglish ? 'New conversation' : 'Nova conversa'}
-              description={isEnglish ? 'Notify when a new conversation arrives' : 'Notificar quando uma nova conversa chegar'}
-            />
-            <Toggle
-              value={notifNewMsg}
-              onChange={setNotifNewMsg}
-              label={isEnglish ? 'New message' : 'Nova mensagem'}
-              description={isEnglish ? 'Notify when a new message arrives in assigned conversations' : 'Notificar quando uma nova mensagem chegar em conversas atribuídas'}
-            />
-            <Toggle
-              value={notifAssigned}
-              onChange={setNotifAssigned}
-              label={isEnglish ? 'Assigned to me' : 'Atribuído a mim'}
-              description={isEnglish ? 'Notify when a conversation is assigned to you' : 'Notificar quando uma conversa for atribuída a você'}
-            />
+          <div className="space-y-6">
+            <div className="divide-y divide-border">
+              <Toggle
+                value={notifNewConv}
+                onChange={setNotifNewConv}
+                label={isEnglish ? 'New conversation' : 'Nova conversa'}
+                description={isEnglish ? 'Notify when a new conversation arrives' : 'Notificar quando uma nova conversa chegar'}
+              />
+              <Toggle
+                value={notifNewMsg}
+                onChange={setNotifNewMsg}
+                label={isEnglish ? 'New message' : 'Nova mensagem'}
+                description={isEnglish ? 'Notify when a new message arrives in assigned conversations' : 'Notificar quando uma nova mensagem chegar em conversas atribuídas'}
+              />
+            </div>
+
+            <div className="pt-2 border-t border-border space-y-4">
+              <div>
+                <h3 className="text-sm font-semibold text-text-primary">
+                  {isEnglish ? 'Operational alerts' : 'Alertas operacionais'}
+                </h3>
+                <p className="text-xs text-text-muted mt-1">
+                  {isEnglish
+                    ? 'Get alerts when a workspace is created, a sale is marked as won, or a support ticket is opened.'
+                    : 'Receba alertas quando uma conta for criada, uma venda for marcada como ganha ou um ticket de suporte for aberto.'}
+                </p>
+              </div>
+
+              <div className="divide-y divide-border rounded-xl border border-border px-4">
+                <Toggle
+                  value={alertOnAccountCreated}
+                  onChange={setAlertOnAccountCreated}
+                  label={isEnglish ? 'Account created' : 'Conta criada'}
+                  description={isEnglish ? 'Alert when a new workspace/account is created' : 'Alertar quando um novo workspace/conta for criado'}
+                />
+                <Toggle
+                  value={alertOnLeadWon}
+                  onChange={setAlertOnLeadWon}
+                  label={isEnglish ? 'Sale won' : 'Venda ganha'}
+                  description={isEnglish ? 'Alert when a lead is moved to won' : 'Alertar quando um lead for movido para ganho'}
+                />
+                <Toggle
+                  value={alertOnSupportTicketOpened}
+                  onChange={setAlertOnSupportTicketOpened}
+                  label={isEnglish ? 'Support ticket opened' : 'Ticket aberto'}
+                  description={isEnglish ? 'Alert when a new support ticket is opened' : 'Alertar quando um novo ticket de suporte for aberto'}
+                />
+              </div>
+
+              <div className="divide-y divide-border rounded-xl border border-border px-4">
+                <Toggle
+                  value={alertEmailEnabled}
+                  onChange={setAlertEmailEnabled}
+                  label="Email"
+                  description={isEnglish ? 'Send operational alerts by email' : 'Enviar alertas operacionais por email'}
+                />
+                <Toggle
+                  value={alertWhatsAppEnabled}
+                  onChange={setAlertWhatsAppEnabled}
+                  label="WhatsApp"
+                  description={isEnglish ? 'Send operational alerts by WhatsApp' : 'Enviar alertas operacionais por WhatsApp'}
+                />
+                <Toggle
+                  value={alertSmsEnabled}
+                  onChange={setAlertSmsEnabled}
+                  label="SMS"
+                  description={isEnglish ? 'Send operational alerts by text message' : 'Enviar alertas operacionais por mensagem de texto'}
+                />
+              </div>
+
+              <Input
+                label={isEnglish ? 'Alert email' : 'Email para alertas'}
+                type="email"
+                value={alertRecipientEmail}
+                onChange={(e) => setAlertRecipientEmail(e.target.value)}
+                placeholder={DEFAULT_ALERT_RECIPIENT_EMAIL}
+                fullWidth
+                hint={isEnglish ? `Used when email alerts are enabled. Defaults to ${DEFAULT_ALERT_RECIPIENT_EMAIL}.` : `Usado quando os alertas por email estiverem ligados. Padrão: ${DEFAULT_ALERT_RECIPIENT_EMAIL}.`}
+              />
+
+              <Input
+                label={isEnglish ? 'Phone for WhatsApp / SMS' : 'Telefone para WhatsApp / SMS'}
+                value={alertRecipientPhone}
+                onChange={(e) => setAlertRecipientPhone(e.target.value)}
+                placeholder="+5511999999999"
+                fullWidth
+                hint={isEnglish ? 'Use international format, for example +5511999999999.' : 'Use formato internacional, por exemplo +5511999999999.'}
+              />
+
+              <div className="rounded-xl border border-border bg-surface p-3">
+                <p className="text-xs text-text-muted">
+                  {isEnglish
+                    ? 'Email delivery uses Resend if configured. SMS and WhatsApp delivery use Twilio if configured.'
+                    : 'Envio por email usa Resend se configurado. SMS e WhatsApp usam Twilio se configurado.'}
+                </p>
+              </div>
+            </div>
           </div>
         );
 
@@ -486,7 +622,7 @@ export default function SettingsPage() {
 
       case 'knowledge':
         return (
-          <KnowledgeBlocksPanel workspaceId={workspaceId ?? ''} />
+          <KnowledgeBlocksPanel workspaceId={workspaceId ?? workspace?.id ?? ''} />
         );
 
       case 'integrations':
