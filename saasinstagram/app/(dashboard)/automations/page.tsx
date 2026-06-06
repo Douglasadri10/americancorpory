@@ -10,6 +10,8 @@ import { AutomationEditor } from '@/components/automations/AutomationEditor';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
+import { useAuth } from '@/hooks/useAuth';
+import { useActiveWorkspaceId } from '@/hooks/useActiveWorkspace';
 import { getFirebaseAuth } from '@/lib/firebase/client';
 import type { Automation } from '@/types/automation';
 import { toast } from 'sonner';
@@ -18,16 +20,13 @@ const triggerLabels: Record<string, string> = {
   new_conversation: 'Nova conversa',
   new_message: 'Nova mensagem',
   keyword_match: 'Palavra-chave',
-  conversation_assigned: 'Conversa atribuída',
   conversation_resolved: 'Conversa resolvida',
-  no_agent_reply: 'Sem resposta do agente',
   outside_business_hours: 'Fora do horário',
 };
 
 const actionLabels: Record<string, string> = {
   send_message: 'Enviar mensagem',
   ai_reply: 'Responder com IA',
-  assign_agent: 'Atribuir agente',
   add_tag: 'Adicionar etiqueta',
   change_status: 'Mudar status',
   send_email: 'Enviar e-mail',
@@ -49,7 +48,8 @@ async function apiCall(path: string, options: RequestInit = {}) {
 }
 
 export default function AutomationsPage() {
-  const [workspaceId, setWorkspaceId] = useState<string | null>(null);
+  const { user } = useAuth();
+  const workspaceId = useActiveWorkspaceId();
   const [currentUid, setCurrentUid] = useState<string>('');
   const [automations, setAutomations] = useState<Automation[]>([]);
   const [loading, setLoading] = useState(true);
@@ -57,12 +57,10 @@ export default function AutomationsPage() {
   const [editingAutomation, setEditingAutomation] = useState<Automation | null>(null);
 
   useEffect(() => {
-    const id = localStorage.getItem('currentWorkspaceId');
-    if (id) setWorkspaceId(id);
-    const auth = getFirebaseAuth();
-    const u = auth.currentUser;
-    if (u) setCurrentUid(u.uid);
-  }, []);
+    if (user) {
+      setCurrentUid(user.uid);
+    }
+  }, [user]);
 
   const loadAutomations = useCallback(async (wsId?: string) => {
     const id = wsId ?? workspaceId;
@@ -164,7 +162,7 @@ export default function AutomationsPage() {
         }
       />
 
-      <div className="flex-1 overflow-y-auto p-6">
+      <div className="flex-1 overflow-y-auto dashboard-page-padding dashboard-page-spacing">
         {loading ? (
           <div className="space-y-3">
             {Array.from({ length: 3 }).map((_, i) => (

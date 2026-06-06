@@ -9,12 +9,12 @@ import {
   Sparkles,
   CheckCheck,
   MoreVertical,
-  UserCheck,
   Tag,
   Archive,
   Trash2,
   RotateCcw,
   Bot,
+  Power,
 } from 'lucide-react';
 import { useMessages } from '@/hooks/useMessages';
 import { MessageBubble } from './MessageBubble';
@@ -28,14 +28,12 @@ interface ConversationThreadProps {
   conversation: Conversation;
   workspaceId: string;
   onStatusChange?: (status: Conversation['status']) => void;
-  onAssign?: () => void;
 }
 
 export function ConversationThread({
   conversation,
   workspaceId,
   onStatusChange,
-  onAssign,
 }: ConversationThreadProps) {
   const { isEnglish, intlLocale } = useWorkspaceLocale();
   const [inputText, setInputText] = useState('');
@@ -43,6 +41,7 @@ export function ConversationThread({
   const [showEmoji, setShowEmoji] = useState(false);
   const [aiMode, setAiMode] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const actionsRef = useRef<HTMLDivElement>(null);
   const emojiRef = useRef<HTMLDivElement>(null);
@@ -80,9 +79,11 @@ export function ConversationThread({
   const { messages, loading, sending, sendMessage, markAsRead } = useMessages(conversation.id);
   const displayName = getContactDisplayName(conversation.contact);
 
-  // Auto-scroll to bottom
+  // Auto-scroll to bottom — scroll the container directly to avoid scrolling the whole page
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const container = messagesContainerRef.current;
+    if (!container) return;
+    container.scrollTop = container.scrollHeight;
   }, [messages]);
 
   // Mark as read when thread is opened
@@ -171,20 +172,21 @@ export function ConversationThread({
               </Badge>
             </div>
             <div className="flex items-center gap-2">
-              {conversation.assignedToName ? (
-                <p className="text-xs text-text-muted">
-                  {isEnglish ? 'Assigned to' : 'Atribuído a'} {conversation.assignedToName}
-                </p>
-              ) : (
-                <p className="text-xs text-text-muted">{isEnglish ? 'Unassigned' : 'Não atribuído'}</p>
-              )}
-              <span className="text-text-muted">·</span>
-              {conversation.aiEnabled && (
+              <p className="text-xs text-text-muted">
+                {isEnglish ? 'Managed by workspace owner' : 'Gerenciado pelo proprietário do workspace'}
+              </p>
+              {(conversation.aiEnabled || conversation.aiHandoffRequested) && <span className="text-text-muted">·</span>}
+              {conversation.aiHandoffRequested ? (
+                <div className="flex items-center gap-1">
+                  <Power size={10} className="text-text-muted" />
+                  <span className="text-xs text-text-muted">{isEnglish ? 'AI paused' : 'IA pausada'}</span>
+                </div>
+              ) : conversation.aiEnabled ? (
                 <div className="flex items-center gap-1">
                   <Bot size={10} className="text-accent" />
                   <span className="text-xs text-accent">{isEnglish ? 'AI enabled' : 'IA ativa'}</span>
                 </div>
-              )}
+              ) : null}
             </div>
           </div>
         </div>
@@ -210,15 +212,6 @@ export function ConversationThread({
               {isEnglish ? 'Reopen' : 'Reabrir'}
             </Button>
           )}
-
-          <Button
-            size="sm"
-            variant="ghost"
-            leftIcon={<UserCheck size={14} />}
-            onClick={onAssign}
-          >
-            {isEnglish ? 'Assign' : 'Atribuir'}
-          </Button>
 
           {/* More options */}
           <div ref={actionsRef} className="relative">
@@ -251,7 +244,7 @@ export function ConversationThread({
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div ref={messagesContainerRef} className="flex-1 overflow-y-auto p-4 space-y-4">
         {loading ? (
           <div className="flex items-center justify-center h-full">
               <div className="flex flex-col items-center gap-3">

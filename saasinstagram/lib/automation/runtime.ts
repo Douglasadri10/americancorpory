@@ -2,7 +2,6 @@ import type { Firestore } from 'firebase-admin/firestore';
 import type { Conversation } from '@/types/conversation';
 import type { Automation, AutomationAction, AutomationCondition } from '@/types/automation';
 import {
-  buildContextualPrompt,
   buildReplyLanguageInstructions,
   DEFAULT_AI_SYSTEM_PROMPT,
 } from '@/lib/openai/prompts';
@@ -14,7 +13,6 @@ export interface AutomationRuntimeContext {
     username?: string;
   };
   conversation: {
-    assignedTo?: string | null;
     channel: Conversation['channel'];
     status: Conversation['status'];
   };
@@ -109,7 +107,6 @@ export function buildAutomationContext(params: {
     conversation: {
       channel: params.conversation.channel,
       status: params.conversation.status,
-      assignedTo: params.conversation.assignedTo ?? null,
     },
     contact: {
       id: params.conversation.contact.id,
@@ -245,29 +242,46 @@ export function buildAutomationSystemPrompt(params: {
     params.fallbackPrompt?.trim() ||
     DEFAULT_AI_SYSTEM_PROMPT;
 
-  return buildContextualPrompt(
-    `${buildReplyLanguageInstructions(params.workspaceLanguage)}
+  const channelNames: Record<string, string> = {
+    instagram: 'Instagram',
+    facebook: 'Facebook Messenger',
+    whatsapp: 'WhatsApp',
+  };
 
-${basePrompt}
+  const sections = [
+    // 1. Identidade da empresa
+    params.workspaceName
+      ? `You represent the company "${params.workspaceName}".`
+      : '',
 
-Mandatory rules for this conversation:
-- (Language rule above overrides everything — always reply in the customer's language)
+    // 2. Conhecimento — antes das regras, o LLM lê os fatos antes de "não invente"
+    params.knowledgeContext?.trim()
+      ? `## Knowledge base\nUse the information below to answer the customer. Do not invent facts not present here.\n\n${params.knowledgeContext.trim()}`
+      : '',
+
+    // 3. Persona / instruções base
+    basePrompt,
+
+    // 4. Regras comportamentais
+    `## Conversation rules
 - Do not repeat a greeting in every message.
-- Do not send generic replies like "Hi, how are you?" without moving the conversation forward.
+- Do not send generic replies without moving the conversation forward.
 - Ask at most one qualifying question per reply.
 - If the conversation has already started, continue from the current point instead of restarting it.
-
-Topic guard and token efficiency:
 - Stay strictly within the scope of the company's products, services, and support topics.
-- If the customer sends off-topic messages (jokes, unrelated requests, personal chat), respond briefly and naturally redirect the conversation back to the business context. Example: "That's a fun one! 😄 Speaking of which, is there anything about [product/service] I can help you with today?"
-- Never engage in extended off-topic exchanges — redirect after at most one brief acknowledgment.
-- Keep replies concise and focused; avoid repeating information already shared in the conversation.
+- If the customer sends off-topic messages, respond briefly and naturally redirect to the business context after at most one brief acknowledgment.
+- Keep replies concise; avoid repeating information already shared.
 - Do not speculate, invent facts, or go beyond what the company has authorized you to discuss.`,
-    {
-      workspaceName: params.workspaceName,
-      channel: params.channel,
-      contactName: params.contactName,
-      customInstructions: params.knowledgeContext,
-    }
-  );
+
+    // 5. Linguagem — por último, recency bias garante que esta regra prevaleça
+    buildReplyLanguageInstructions(params.workspaceLanguage),
+
+    // 6. Metadata de sessão
+    [
+      `Channel: ${channelNames[params.channel] ?? params.channel}`,
+      params.contactName ? `Customer name: ${params.contactName}` : '',
+    ].filter(Boolean).join('\n'),
+  ].filter(Boolean);
+
+  return sections.join('\n\n');
 }

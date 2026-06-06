@@ -1,6 +1,5 @@
 import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
-import { resolveKnowledgeContext } from './knowledgeRetrieval';
 
 const db = admin.firestore();
 
@@ -115,21 +114,9 @@ async function executeAction(
       }
 
       case 'ai_reply': {
-        // Resolve knowledge blocks for this message
-        const incomingText = ((context as Record<string, Record<string, unknown>>)?.message?.text as string) ?? '';
-        const knowledgeContext = incomingText
-          ? await resolveKnowledgeContext(db, workspaceId, incomingText)
-          : '';
-
-        await db.collection('aiQueue').add({
-          workspaceId,
-          conversationId,
-          systemPrompt: action.aiSystemPrompt,
-          resolvedKnowledgeContext: knowledgeContext,
-          model: action.aiModel ?? 'gpt-4o-mini',
-          maxTokens: action.aiMaxTokens ?? 300,
-          createdAt: admin.firestore.FieldValue.serverTimestamp(),
-        });
+        // This Cloud Functions path (automationQueue → aiQueue → aiResponder) is intentionally
+        // disabled. aiResponder.ts never sends messages to customers (TODO: Send via Meta API).
+        // The production AI path is: webhook → app/api/webhooks/meta/route.ts → runAiAutomationReply()
         return { success: true };
       }
 

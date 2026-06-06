@@ -1,9 +1,11 @@
 import type { Firestore } from 'firebase-admin/firestore';
 import { getOpenAIClient } from '@/lib/openai/client';
+import { trackAIUsage, type AIUsageContext } from '@/lib/openai/usage';
 import type { KnowledgeBlock } from '@/types/knowledge';
 
 const KNOWLEDGE_BLOCKS_COLLECTION = 'knowledgeBlocks';
-const SIMILARITY_THRESHOLD = 0.60;
+const SIMILARITY_THRESHOLD = 0.70;
+const KNOWLEDGE_TOTAL_CHAR_BUDGET = 4000;
 
 function cosineSimilarity(a: number[], b: number[]): number {
   if (a.length !== b.length || a.length === 0) return 0;
@@ -29,12 +31,25 @@ function normalizeText(text: string): string {
     .trim();
 }
 
-export async function computeEmbedding(text: string): Promise<number[]> {
+export async function computeEmbedding(
+  text: string,
+  usageContext?: AIUsageContext
+): Promise<number[]> {
   const openai = getOpenAIClient();
   const response = await openai.embeddings.create({
     model: 'text-embedding-3-small',
     input: text,
   });
+
+  if (usageContext) {
+    await trackAIUsage({
+      context: usageContext,
+      model: 'text-embedding-3-small',
+      inputTokens: response.usage?.prompt_tokens ?? 0,
+      outputTokens: 0,
+    }).catch(() => null);
+  }
+
   return response.data[0].embedding;
 }
 
@@ -75,7 +90,15 @@ export async function resolveKnowledgeBlocks(params: {
     await Promise.allSettled(
       blocksNeedingEmbedding.map(async (block) => {
         try {
-          const embedding = await computeEmbedding(block.content);
+          const embedding = await computeEmbedding(block.content, {
+            db,
+            workspaceId,
+            source: 'knowledge_embedding',
+            metadata: {
+              knowledgeBlockId: block.id,
+              stage: 'block_seed',
+            },
+          });
           block.embedding = embedding;
           await db.collection(KNOWLEDGE_BLOCKS_COLLECTION).doc(block.id).update({ embedding });
         } catch {
@@ -90,7 +113,14 @@ export async function resolveKnowledgeBlocks(params: {
 
   let messageEmbedding: number[];
   try {
-    messageEmbedding = await computeEmbedding(messageText);
+    messageEmbedding = await computeEmbedding(messageText, {
+      db,
+      workspaceId,
+      source: 'knowledge_embedding',
+      metadata: {
+        stage: 'message_query',
+      },
+    });
   } catch {
     return [];
   }
@@ -110,18 +140,29 @@ export async function resolveKnowledgeBlocks(params: {
   return candidates.slice(0, maxBlocks).map((item) => item.block);
 }
 
-// Max chars per block injected into the system prompt.
-// Blocks stored before the 20k limit was enforced may be larger — truncate defensively.
-const MAX_CONTENT_IN_PROMPT = 20000;
-
 export function formatKnowledgeContext(blocks: KnowledgeBlock[]): string {
   if (blocks.length === 0) return '';
-  return blocks
-    .map((b) => {
-      const content = b.content.length > MAX_CONTENT_IN_PROMPT
-        ? b.content.slice(0, MAX_CONTENT_IN_PROMPT) + '\n[...]'
-        : b.content;
-      return `### ${b.name}\n${content}`;
-    })
-    .join('\n\n');
+
+  const conflictHeader =
+    blocks.length > 1
+      ? 'If sections below conflict on the same topic, trust the lower-numbered section.\n\n'
+      : '';
+
+  let budget = KNOWLEDGE_TOTAL_CHAR_BUDGET;
+  const parts: string[] = [];
+
+  for (let i = 0; i < blocks.length; i++) {
+    if (budget <= 0) break;
+    const header = `### Section ${i + 1}: ${blocks[i].name}\n`;
+    const available = budget - header.length;
+    if (available <= 0) break;
+    const content =
+      blocks[i].content.length > available
+        ? blocks[i].content.slice(0, available) + '\n[…truncated]'
+        : blocks[i].content;
+    parts.push(header + content);
+    budget -= header.length + content.length;
+  }
+
+  return conflictHeader + parts.join('\n\n');
 }

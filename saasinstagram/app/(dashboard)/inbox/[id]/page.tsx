@@ -7,24 +7,29 @@ import { ConversationList } from '@/components/inbox/ConversationList';
 import { ConversationThread } from '@/components/inbox/ConversationThread';
 import { ContactPanel } from '@/components/inbox/ContactPanel';
 import { useConversations, useConversation } from '@/hooks/useConversations';
+import { useActiveWorkspaceId } from '@/hooks/useActiveWorkspace';
 import type { ConversationFilter, Conversation } from '@/types/conversation';
 import { Button } from '@/components/ui/Button';
 import { ArrowLeft, Info, X } from 'lucide-react';
 import { getContactDisplayName } from '@/lib/conversations/display';
 import { useAuth } from '@/hooks/useAuth';
+import { useWorkspaceLocale } from '@/components/providers/WorkspaceLocaleProvider';
+import { toast } from 'sonner';
 
 export default function ConversationDetailPage() {
   const params = useParams();
   const router = useRouter();
   const { user } = useAuth();
+  const { isEnglish } = useWorkspaceLocale();
   const conversationId = params.id as string;
-  const workspaceId = typeof window !== 'undefined' ? localStorage.getItem('currentWorkspaceId') : null;
+  const workspaceId = useActiveWorkspaceId();
 
   const [filter, setFilter] = useState<ConversationFilter>({ status: 'open' });
   const [showContactSheet, setShowContactSheet] = useState(false);
+  const [automationSaving, setAutomationSaving] = useState(false);
 
-  const { conversations, loading: listLoading, updateStatus } = useConversations(user ? workspaceId : null, filter);
-  const { conversation, loading: convLoading } = useConversation(user ? conversationId : null);
+  const { conversations, loading: listLoading, error: listError, updateStatus } = useConversations(user ? workspaceId : null, filter);
+  const { conversation, loading: convLoading, updateConversation } = useConversation(user ? conversationId : null);
 
   // Close sheet on conversation change
   useEffect(() => {
@@ -34,6 +39,31 @@ export default function ConversationDetailPage() {
   const handleStatusChange = async (status: Conversation['status']) => {
     if (!conversation) return;
     await updateStatus(conversation.id, status);
+  };
+
+  const handleAutomationToggle = async (enabled: boolean) => {
+    if (!conversation) return;
+
+    setAutomationSaving(true);
+    try {
+      await updateConversation({
+        aiEnabled: enabled ? conversation.aiEnabled : false,
+        aiHandoffRequested: !enabled,
+      });
+      toast.success(
+        enabled
+          ? (isEnglish ? 'AI enabled for this chat.' : 'IA ativada neste chat.')
+          : (isEnglish ? 'AI disabled for this chat.' : 'IA desligada neste chat.')
+      );
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : (isEnglish ? 'Error updating chat automation' : 'Erro ao atualizar a automação do chat')
+      );
+    } finally {
+      setAutomationSaving(false);
+    }
   };
 
   return (
@@ -72,6 +102,7 @@ export default function ConversationDetailPage() {
             conversations={conversations}
             selectedId={conversationId}
             loading={listLoading}
+            error={listError}
             filter={filter}
             onSelect={(conv) => router.push(`/inbox/${conv.id}`)}
             onFilterChange={setFilter}
@@ -85,18 +116,21 @@ export default function ConversationDetailPage() {
           </div>
         ) : conversation ? (
           <>
-            <div className="flex-1 min-w-0">
+            <div className="flex-1 min-w-0 overflow-hidden">
               <ConversationThread
                 conversation={conversation}
                 workspaceId={workspaceId ?? ''}
                 onStatusChange={handleStatusChange}
-                onAssign={() => {}}
               />
             </div>
 
             {/* Contact panel — desktop only (xl+) */}
             <div className="hidden xl:block">
-              <ContactPanel conversation={conversation} />
+              <ContactPanel
+                conversation={conversation}
+                automationSaving={automationSaving}
+                onAutomationToggle={handleAutomationToggle}
+              />
             </div>
           </>
         ) : (
@@ -128,7 +162,11 @@ export default function ConversationDetailPage() {
                 <X size={16} />
               </button>
             </div>
-            <ContactPanel conversation={conversation} />
+            <ContactPanel
+              conversation={conversation}
+              automationSaving={automationSaving}
+              onAutomationToggle={handleAutomationToggle}
+            />
           </div>
         </div>
       )}
