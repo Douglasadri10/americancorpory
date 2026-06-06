@@ -28,12 +28,16 @@ interface ConversationThreadProps {
   conversation: Conversation;
   workspaceId: string;
   onStatusChange?: (status: Conversation['status']) => void;
+  onAutomationToggle?: (enabled: boolean) => Promise<void> | void;
+  automationSaving?: boolean;
 }
 
 export function ConversationThread({
   conversation,
   workspaceId,
   onStatusChange,
+  onAutomationToggle,
+  automationSaving = false,
 }: ConversationThreadProps) {
   const { isEnglish, intlLocale } = useWorkspaceLocale();
   const [inputText, setInputText] = useState('');
@@ -177,15 +181,25 @@ export function ConversationThread({
               </p>
               {(conversation.aiEnabled || conversation.aiHandoffRequested) && <span className="text-text-muted">·</span>}
               {conversation.aiHandoffRequested ? (
-                <div className="flex items-center gap-1">
+                <button
+                  onClick={() => onAutomationToggle?.(true)}
+                  disabled={automationSaving || !onAutomationToggle}
+                  className="flex items-center gap-1 hover:opacity-75 transition-opacity disabled:opacity-50 disabled:cursor-default"
+                  title={isEnglish ? 'Click to enable AI' : 'Clique para ligar a IA'}
+                >
                   <Power size={10} className="text-text-muted" />
                   <span className="text-xs text-text-muted">{isEnglish ? 'AI paused' : 'IA pausada'}</span>
-                </div>
+                </button>
               ) : conversation.aiEnabled ? (
-                <div className="flex items-center gap-1">
+                <button
+                  onClick={() => onAutomationToggle?.(false)}
+                  disabled={automationSaving || !onAutomationToggle}
+                  className="flex items-center gap-1 hover:opacity-75 transition-opacity disabled:opacity-50 disabled:cursor-default"
+                  title={isEnglish ? 'Click to pause AI' : 'Clique para pausar a IA'}
+                >
                   <Bot size={10} className="text-accent" />
                   <span className="text-xs text-accent">{isEnglish ? 'AI enabled' : 'IA ativa'}</span>
-                </div>
+                </button>
               ) : null}
             </div>
           </div>
@@ -224,6 +238,21 @@ export function ConversationThread({
 
             {showActions && (
               <div className="absolute right-0 top-full mt-1 bg-card border border-border rounded-lg shadow-modal w-44 z-10 py-1">
+                {onAutomationToggle && (
+                  <>
+                    <button
+                      onClick={() => { onAutomationToggle(!conversation.aiHandoffRequested); setShowActions(false); }}
+                      disabled={automationSaving}
+                      className="flex items-center gap-2 w-full px-3 py-2 text-sm text-text-secondary hover:bg-surface hover:text-text-primary transition-colors disabled:opacity-50"
+                    >
+                      {conversation.aiHandoffRequested ? <Bot size={14} /> : <Power size={14} />}
+                      {conversation.aiHandoffRequested
+                        ? (isEnglish ? 'Enable AI' : 'Ligar IA')
+                        : (isEnglish ? 'Pause AI' : 'Pausar IA')}
+                    </button>
+                    <hr className="border-border my-1" />
+                  </>
+                )}
                 <button className="flex items-center gap-2 w-full px-3 py-2 text-sm text-text-secondary hover:bg-surface hover:text-text-primary transition-colors">
                   <Tag size={14} />
                   {isEnglish ? 'Add tag' : 'Adicionar etiqueta'}

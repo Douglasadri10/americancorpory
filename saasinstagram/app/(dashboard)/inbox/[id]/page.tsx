@@ -121,6 +121,8 @@ export default function ConversationDetailPage() {
                 conversation={conversation}
                 workspaceId={workspaceId ?? ''}
                 onStatusChange={handleStatusChange}
+                onAutomationToggle={handleAutomationToggle}
+                automationSaving={automationSaving}
               />
             </div>
 
