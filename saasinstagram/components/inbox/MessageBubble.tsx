@@ -35,7 +35,7 @@ const MediaPreview = ({ message }: { message: Message }) => {
   switch (message.type) {
     case 'image':
       return (
-        <div className="max-w-[240px] rounded-lg overflow-hidden mb-1">
+        <div className="max-w-[200px] sm:max-w-[240px] rounded-lg overflow-hidden mb-1">
           {message.media.url ? (
             <img
               src={message.media.url}
@@ -54,7 +54,7 @@ const MediaPreview = ({ message }: { message: Message }) => {
       );
     case 'video':
       return (
-        <div className="max-w-[240px] rounded-lg overflow-hidden mb-1">
+        <div className="max-w-[200px] sm:max-w-[240px] rounded-lg overflow-hidden mb-1">
           {message.media.url ? (
             <video
               src={message.media.url}
@@ -171,7 +171,7 @@ export function MessageBubble({
       )}
 
       {/* Bubble */}
-      <div className={clsx('flex flex-col max-w-[70%]', isOutbound ? 'items-end' : 'items-start')}>
+      <div className={clsx('flex flex-col max-w-[85%] sm:max-w-[70%]', isOutbound ? 'items-end' : 'items-start')}>
         {/* Sender name (for inbound) */}
         {!isOutbound && showAvatar && (
           <span className="text-xs text-text-muted mb-1 px-1">{contactName ?? (isEnglish ? 'Contact' : 'Contato')}</span>

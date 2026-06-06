@@ -8,22 +8,25 @@ import { ConversationList } from '@/components/inbox/ConversationList';
 import { ConversationThread } from '@/components/inbox/ConversationThread';
 import { ContactPanel } from '@/components/inbox/ContactPanel';
 import { useConversations } from '@/hooks/useConversations';
+import { useActiveWorkspaceId } from '@/hooks/useActiveWorkspace';
 import type { Conversation, ConversationFilter } from '@/types/conversation';
 import { MessageSquare } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { useWorkspaceLocale } from '@/components/providers/WorkspaceLocaleProvider';
+import { toast } from 'sonner';
 
 export default function InboxPage() {
   const router = useRouter();
   const { user } = useAuth();
   const { isEnglish } = useWorkspaceLocale();
-  const workspaceId = typeof window !== 'undefined' ? localStorage.getItem('currentWorkspaceId') : null;
+  const workspaceId = useActiveWorkspaceId();
 
   const [filter, setFilter] = useState<ConversationFilter>({ status: 'open' });
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
   const [showContactPanel, setShowContactPanel] = useState(true);
+  const [automationSaving, setAutomationSaving] = useState(false);
 
-  const { conversations, loading, updateStatus } = useConversations(user ? workspaceId : null, filter);
+  const { conversations, loading, error, updateStatus, updateConversation } = useConversations(user ? workspaceId : null, filter);
 
   useEffect(() => {
     if (!selectedConversation) {
@@ -57,6 +60,34 @@ export default function InboxPage() {
     }
   };
 
+  const handleAutomationToggle = async (enabled: boolean) => {
+    if (!selectedConversation) return;
+
+    setAutomationSaving(true);
+    try {
+      const updates = {
+        aiEnabled: enabled ? selectedConversation.aiEnabled : false,
+        aiHandoffRequested: !enabled,
+      };
+
+      await updateConversation(selectedConversation.id, updates);
+      setSelectedConversation((prev) => (prev ? { ...prev, ...updates } : prev));
+      toast.success(
+        enabled
+          ? (isEnglish ? 'AI enabled for this chat.' : 'IA ativada neste chat.')
+          : (isEnglish ? 'AI disabled for this chat.' : 'IA desligada neste chat.')
+      );
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : (isEnglish ? 'Error updating chat automation' : 'Erro ao atualizar a automação do chat')
+      );
+    } finally {
+      setAutomationSaving(false);
+    }
+  };
+
   return (
     <div className="flex flex-col h-full overflow-hidden">
       <Header
@@ -78,6 +109,7 @@ export default function InboxPage() {
             conversations={conversations}
             selectedId={selectedConversation?.id}
             loading={loading}
+            error={error}
             filter={filter}
             onSelect={handleSelectConversation}
             onFilterChange={setFilter}
@@ -88,19 +120,22 @@ export default function InboxPage() {
         <div className={clsx('flex-1 min-w-0', selectedConversation ? 'flex' : 'hidden lg:flex')}>
           {selectedConversation ? (
             <>
-              <div className="flex-1 min-w-0">
+              <div className="flex-1 min-w-0 overflow-hidden">
                 <ConversationThread
                   conversation={selectedConversation}
                   workspaceId={workspaceId ?? ''}
                   onStatusChange={handleStatusChange}
-                  onAssign={() => {}}
                 />
               </div>
 
               {/* Contact panel — desktop only */}
               {showContactPanel && (
                 <div className="hidden xl:block">
-                  <ContactPanel conversation={selectedConversation} />
+                  <ContactPanel
+                    conversation={selectedConversation}
+                    automationSaving={automationSaving}
+                    onAutomationToggle={handleAutomationToggle}
+                  />
                 </div>
               )}
             </>

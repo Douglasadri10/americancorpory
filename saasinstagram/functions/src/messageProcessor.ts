@@ -31,6 +31,12 @@ export const processIncomingMessage = functions
         updatedAt: new Date().toISOString(),
       });
 
+      // Skip all automations if the user disabled them for this conversation
+      if (conversation.aiHandoffRequested === true) {
+        functions.logger.info(`Automations skipped for conversation ${conversationId}: disabled by user`);
+        return;
+      }
+
       // Check and run automations
       await runAutomationsForMessage(workspaceId, conversation, message);
 

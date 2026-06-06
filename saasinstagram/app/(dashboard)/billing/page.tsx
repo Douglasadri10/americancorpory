@@ -167,7 +167,7 @@ export default function BillingPage() {
     <div className="flex flex-col h-full overflow-hidden">
       <Header title="Faturamento" subtitle="Gerencie sua assinatura" />
 
-      <div className="flex-1 overflow-y-auto p-6 space-y-8">
+      <div className="flex-1 overflow-y-auto dashboard-page-padding dashboard-page-spacing">
         {/* Current plan status */}
         <Card className="bg-gradient-to-r from-accent/10 to-transparent border-accent/20">
           <div className="flex items-start justify-between gap-4">

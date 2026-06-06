@@ -5,6 +5,7 @@ import { clsx } from 'clsx';
 import { Plus, ChevronLeft, ChevronRight, X, Trash2 } from 'lucide-react';
 import { Header } from '@/components/layout/Header';
 import { Button } from '@/components/ui/Button';
+import { useActiveWorkspaceId } from '@/hooks/useActiveWorkspace';
 import { getFirebaseAuth } from '@/lib/firebase/client';
 import { toast } from 'sonner';
 import type { Appointment } from '@/types/appointment';
@@ -72,7 +73,7 @@ interface GoogleEvent {
 }
 
 export default function SchedulePage() {
-  const [workspaceId, setWorkspaceId] = useState<string | null>(null);
+  const workspaceId = useActiveWorkspaceId();
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [googleEvents, setGoogleEvents] = useState<GoogleEvent[]>([]);
   const [loading, setLoading] = useState(true);
@@ -102,8 +103,6 @@ export default function SchedulePage() {
   const [newNotes, setNewNotes] = useState('');
   const [newStatus, setNewStatus] = useState<Appointment['status']>('booked');
   const [saving, setSaving] = useState(false);
-
-  useEffect(() => { setWorkspaceId(localStorage.getItem('currentWorkspaceId')); }, []);
 
   const load = useCallback(async () => {
     if (!workspaceId) return;
@@ -192,188 +191,276 @@ export default function SchedulePage() {
         title="Agenda"
         subtitle={monthLabel}
         actions={
-          <Button size="sm" leftIcon={<Plus size={14} />} onClick={() => setShowModal(true)}>
+          <Button
+            size="sm"
+            leftIcon={<Plus size={14} />}
+            onClick={() => setShowModal(true)}
+            className="w-full justify-center sm:w-auto"
+          >
             Novo compromisso
           </Button>
         }
       />
 
       {/* ── Toolbar ── */}
-      <div className="flex items-center gap-3 px-6 py-3 border-b border-border shrink-0">
-        <Button variant="ghost" size="sm" onClick={() => setCurrentWeek(new Date())} className="text-xs">Hoje</Button>
+      <div className="flex shrink-0 items-center gap-3 overflow-x-auto border-b border-border px-4 py-3 md:px-6">
+        <Button variant="ghost" size="sm" onClick={() => setCurrentWeek(new Date())} className="text-xs whitespace-nowrap">
+          Hoje
+        </Button>
         <div className="flex items-center gap-1">
-          <button onClick={() => setCurrentWeek((d) => { const n = new Date(d); n.setDate(n.getDate() - 7); return n; })} className="p-1.5 text-text-muted hover:text-text-primary rounded hover:bg-surface">
+          <button
+            onClick={() => setCurrentWeek((d) => { const n = new Date(d); n.setDate(n.getDate() - 7); return n; })}
+            className="rounded p-1.5 text-text-muted hover:bg-surface hover:text-text-primary"
+          >
             <ChevronLeft size={16} />
           </button>
-          <button onClick={() => setCurrentWeek((d) => { const n = new Date(d); n.setDate(n.getDate() + 7); return n; })} className="p-1.5 text-text-muted hover:text-text-primary rounded hover:bg-surface">
+          <button
+            onClick={() => setCurrentWeek((d) => { const n = new Date(d); n.setDate(n.getDate() + 7); return n; })}
+            className="rounded p-1.5 text-text-muted hover:bg-surface hover:text-text-primary"
+          >
             <ChevronRight size={16} />
           </button>
         </div>
-        <span className="text-sm font-semibold text-text-primary capitalize">{monthLabel}</span>
+        <span className="whitespace-nowrap text-sm font-semibold capitalize text-text-primary">{monthLabel}</span>
       </div>
 
-      {/* ── Calendar Grid ── */}
+      {/* ── Calendar ── */}
       <div className="flex flex-col flex-1 overflow-hidden">
-        {/* Day headers */}
-        <div className="flex shrink-0 border-b border-border">
-          <div className="w-14 shrink-0" />
-          {weekDays.map((day) => {
-            const isToday = formatDate(day) === today;
-            return (
-              <div key={day.toISOString()} className="flex-1 text-center py-2 border-l border-border first:border-l-0">
-                <p className="text-xs text-text-muted uppercase tracking-wide">{DAYS_PT[day.getDay()]}</p>
-                <div className={clsx(
-                  'inline-flex items-center justify-center w-8 h-8 rounded-full mt-0.5 text-sm font-semibold mx-auto',
-                  isToday ? 'bg-accent text-white' : 'text-text-primary'
-                )}>
-                  {day.getDate()}
-                </div>
+
+        {/* Mobile: Agenda view */}
+        <div className="lg:hidden flex-1 overflow-y-auto">
+          <div className="px-4 py-4 space-y-4">
+            {loading ? (
+              <div className="flex items-center justify-center py-20">
+                <div className="h-5 w-5 animate-spin rounded-full border-2 border-accent border-t-transparent" />
               </div>
-            );
-          })}
-        </div>
-
-        {/* Scrollable time grid */}
-        <div ref={gridRef} className="flex-1 overflow-y-auto relative">
-          {loading ? (
-            <div className="flex items-center justify-center py-20">
-              <div className="animate-spin w-5 h-5 border-2 border-accent border-t-transparent rounded-full" />
-            </div>
-          ) : (
-            <div className="flex" style={{ height: `${TOTAL_HOURS * ROW_PX}px` }}>
-              {/* Hour labels */}
-              <div className="w-14 shrink-0 relative">
-                {Array.from({ length: TOTAL_HOURS }, (_, i) => (
-                  <div key={i} style={{ top: `${i * ROW_PX}px`, height: `${ROW_PX}px` }} className="absolute w-full flex items-start justify-end pr-2 pt-0.5">
-                    <span className="text-[10px] text-text-muted tabular-nums">
-                      {String(HOUR_START + i).padStart(2, '0')}:00
-                    </span>
-                  </div>
-                ))}
-              </div>
-
-              {/* Day columns */}
-              <div className="flex flex-1 relative">
-                {/* Current time line */}
-                {isThisWeek && nowTop >= 0 && nowTop <= 100 && (
-                  <div
-                    className="absolute z-20 flex items-center pointer-events-none"
-                    style={{ top: `${nowTop}%`, left: `${(todayIdx / 7) * 100}%`, width: `${100 / 7}%` }}
-                  >
-                    <div className="w-2 h-2 rounded-full bg-red-500 shrink-0 -ml-1" />
-                    <div className="flex-1 h-px bg-red-500" />
-                  </div>
-                )}
-
-                {weekDays.map((day, colIdx) => {
-                  const dateStr   = formatDate(day);
-                  const dayAppts  = byDate[dateStr] ?? [];
-                  const isToday   = dateStr === today;
+            ) : (
+              <>
+                {weekDays.map((day) => {
+                  const dateStr = formatDate(day);
+                  const dayAppts = byDate[dateStr] ?? [];
+                  const dayGoogleEvts = gcByDate[dateStr] ?? [];
+                  const isToday = dateStr === today;
+                  if (dayAppts.length === 0 && dayGoogleEvts.length === 0) return null;
                   return (
-                    <div
-                      key={dateStr}
-                      className={clsx('flex-1 border-l border-border relative', isToday && 'bg-accent-subtle/5')}
-                      style={{ height: `${TOTAL_HOURS * ROW_PX}px` }}
-                      onClick={(e) => {
-                        // click on empty space opens modal with pre-filled date
-                        const target = e.target as HTMLElement;
-                        if (target.closest('[data-appointment]')) return;
-                        const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                        const relY = e.clientY - rect.top;
-                        const pct = relY / rect.height;
-                        const totalMinutes = HOUR_START * 60 + Math.round(pct * TOTAL_HOURS * 60 / 30) * 30;
-                        const h = Math.floor(totalMinutes / 60);
-                        const m = totalMinutes % 60;
-                        const startStr = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
-                        const endH = h + 1;
-                        const endStr = `${String(endH).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
-                        setNewDate(dateStr);
-                        setNewStart(startStr);
-                        setNewEnd(endStr);
-                        setShowModal(true);
-                      }}
-                    >
-                      {/* Hour grid lines */}
-                      {Array.from({ length: TOTAL_HOURS }, (_, i) => (
-                        <div key={i} style={{ top: `${i * ROW_PX}px` }} className="absolute w-full border-t border-border/40" />
-                      ))}
-                      {/* Half-hour lines */}
-                      {Array.from({ length: TOTAL_HOURS }, (_, i) => (
-                        <div key={`h${i}`} style={{ top: `${i * ROW_PX + ROW_PX / 2}px` }} className="absolute w-full border-t border-border/20 border-dashed" />
-                      ))}
-
-                      {/* HannaAI Appointments */}
-                      {dayAppts.map((a) => {
-                        const top    = topPercent(a.startTime);
-                        const height = heightPercent(a.startTime, a.endTime);
-                        return (
-                          <div
-                            key={a.id}
-                            data-appointment="1"
-                            className={clsx(
-                              'absolute left-1 right-1 rounded-md border px-1.5 py-1 overflow-hidden cursor-pointer group z-10 transition-opacity hover:opacity-90',
-                              STATUS_COLOR[a.status]
-                            )}
-                            style={{ top: `${top}%`, height: `${height}%`, minHeight: '22px' }}
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            <p className="text-[11px] font-semibold leading-tight truncate">{a.title}</p>
-                            <p className="text-[10px] opacity-75 leading-tight">{a.startTime}–{a.endTime}</p>
-                            {a.contactName && (
-                              <p className="text-[10px] opacity-60 leading-tight truncate">{a.contactName}</p>
-                            )}
-                            <button
-                              data-appointment="1"
-                              onClick={(e) => { e.stopPropagation(); void handleCancel(a.id); }}
-                              className="absolute top-1 right-1 hidden group-hover:flex p-0.5 rounded hover:bg-black/20"
-                              title="Cancelar"
-                            >
-                              <Trash2 size={10} />
-                            </button>
-                          </div>
-                        );
-                      })}
-
-                      {/* Google Calendar Events */}
-                      {(gcByDate[dateStr] ?? []).filter(e => !e.allDay).map((e) => {
-                        const top    = topPercent(e.start);
-                        const height = heightPercent(e.start, e.end);
-                        return (
-                          <div
-                            key={`gc-${e.id}`}
-                            data-appointment="1"
-                            className="absolute rounded-md border px-1.5 py-1 overflow-hidden z-10 opacity-80 hover:opacity-100 transition-opacity"
-                            style={{
-                              top: `${top}%`,
-                              height: `${height}%`,
-                              minHeight: '22px',
-                              left: '4px',
-                              right: '4px',
-                              backgroundColor: 'rgba(30, 100, 210, 0.25)',
-                              borderColor: 'rgba(66, 133, 244, 0.6)',
-                            }}
-                            title={`Google: ${e.title}`}
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            <p className="text-[10px] text-blue-300 leading-tight">📅 {e.title}</p>
-                            <p className="text-[10px] text-blue-400/70 leading-tight">{e.start}–{e.end}</p>
-                          </div>
-                        );
-                      })}
+                    <div key={dateStr}>
+                      <h3 className={clsx('text-xs font-semibold uppercase tracking-wide mb-2 flex items-center gap-2', isToday ? 'text-accent' : 'text-text-muted')}>
+                        {DAYS_PT[day.getDay()]}, {day.getDate()} {MONTHS_PT[day.getMonth()]}
+                        {isToday && <span className="text-[10px] bg-accent text-white px-1.5 py-0.5 rounded-full normal-case tracking-normal font-medium">Hoje</span>}
+                      </h3>
+                      <div className="space-y-2">
+                        {[...dayAppts.map((a) => ({ ...a, _type: 'appt' as const })), ...dayGoogleEvts.map((e) => ({ ...e, _type: 'google' as const }))]
+                          .sort((a, b) => (('startTime' in a ? a.startTime : a.start) ?? '').localeCompare(('startTime' in b ? b.startTime : b.start) ?? ''))
+                          .map((item) => {
+                            if (item._type === 'appt') {
+                              const appt = item as Appointment & { _type: 'appt' };
+                              return (
+                                <div key={appt.id} className={clsx('rounded-xl border px-3 py-2.5 text-sm flex items-start justify-between gap-2', STATUS_COLOR[appt.status])}>
+                                  <div className="min-w-0">
+                                    <p className="font-medium truncate">{appt.title}</p>
+                                    {appt.contactName && <p className="text-xs opacity-75 mt-0.5 truncate">{appt.contactName}</p>}
+                                  </div>
+                                  <div className="flex items-center gap-1.5 shrink-0">
+                                    <span className="text-xs opacity-75 whitespace-nowrap">{appt.startTime}–{appt.endTime}</span>
+                                    <button onClick={() => void handleCancel(appt.id)} className="p-1 rounded hover:bg-black/20" title="Cancelar">
+                                      <Trash2 size={12} />
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            }
+                            const evt = item as GoogleEvent & { _type: 'google' };
+                            return (
+                              <div key={`gc-${evt.id}`} className="rounded-xl border border-blue-500/30 bg-blue-500/10 px-3 py-2.5 text-sm">
+                                <div className="flex items-center justify-between gap-2">
+                                  <span className="font-medium text-blue-400 truncate">📅 {evt.title}</span>
+                                  {!evt.allDay && <span className="text-xs text-blue-400/75 shrink-0">{evt.start?.slice(11, 16)}–{evt.end?.slice(11, 16)}</span>}
+                                </div>
+                              </div>
+                            );
+                          })}
+                      </div>
                     </div>
                   );
                 })}
-              </div>
+                {weekDays.every((d) => {
+                  const ds = formatDate(d);
+                  return (byDate[ds]?.length ?? 0) === 0 && (gcByDate[ds]?.length ?? 0) === 0;
+                }) && (
+                  <div className="text-center py-16">
+                    <p className="text-sm text-text-muted">Nenhum compromisso nesta semana</p>
+                    <Button size="sm" className="mt-3" onClick={() => setShowModal(true)}>
+                      Novo compromisso
+                    </Button>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* Desktop: Week grid */}
+        <div className="hidden lg:flex flex-col flex-1 overflow-hidden">
+          <div className="flex-1 overflow-x-auto">
+            <div className="flex min-h-full min-w-[720px] flex-col">
+            {/* Day headers */}
+            <div className="flex shrink-0 border-b border-border">
+              <div className="w-14 shrink-0" />
+              {weekDays.map((day) => {
+                const isToday = formatDate(day) === today;
+                return (
+                  <div key={day.toISOString()} className="flex-1 border-l border-border py-2 text-center first:border-l-0">
+                    <p className="text-xs uppercase tracking-wide text-text-muted">{DAYS_PT[day.getDay()]}</p>
+                    <div className={clsx(
+                      'mx-auto mt-0.5 inline-flex h-8 w-8 items-center justify-center rounded-full text-sm font-semibold',
+                      isToday ? 'bg-accent text-white' : 'text-text-primary'
+                    )}>
+                      {day.getDate()}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
-          )}
+
+            {/* Scrollable time grid */}
+            <div ref={gridRef} className="relative flex-1 overflow-y-auto">
+              {loading ? (
+                <div className="flex items-center justify-center py-20">
+                  <div className="h-5 w-5 animate-spin rounded-full border-2 border-accent border-t-transparent" />
+                </div>
+              ) : (
+                <div className="flex" style={{ height: `${TOTAL_HOURS * ROW_PX}px` }}>
+                  {/* Hour labels */}
+                  <div className="relative w-14 shrink-0">
+                    {Array.from({ length: TOTAL_HOURS }, (_, i) => (
+                      <div key={i} style={{ top: `${i * ROW_PX}px`, height: `${ROW_PX}px` }} className="absolute flex w-full items-start justify-end pr-2 pt-0.5">
+                        <span className="text-[10px] text-text-muted tabular-nums">
+                          {String(HOUR_START + i).padStart(2, '0')}:00
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Day columns */}
+                  <div className="relative flex flex-1">
+                    {/* Current time line */}
+                    {isThisWeek && nowTop >= 0 && nowTop <= 100 && (
+                      <div
+                        className="pointer-events-none absolute z-20 flex items-center"
+                        style={{ top: `${nowTop}%`, left: `${(todayIdx / 7) * 100}%`, width: `${100 / 7}%` }}
+                      >
+                        <div className="-ml-1 h-2 w-2 shrink-0 rounded-full bg-red-500" />
+                        <div className="h-px flex-1 bg-red-500" />
+                      </div>
+                    )}
+
+                    {weekDays.map((day) => {
+                      const dateStr   = formatDate(day);
+                      const dayAppts  = byDate[dateStr] ?? [];
+                      const isToday   = dateStr === today;
+                      return (
+                        <div
+                          key={dateStr}
+                          className={clsx('relative flex-1 border-l border-border', isToday && 'bg-accent-subtle/5')}
+                          style={{ height: `${TOTAL_HOURS * ROW_PX}px` }}
+                          onClick={(e) => {
+                            const target = e.target as HTMLElement;
+                            if (target.closest('[data-appointment]')) return;
+                            const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                            const relY = e.clientY - rect.top;
+                            const pct = relY / rect.height;
+                            const totalMinutes = HOUR_START * 60 + Math.round(pct * TOTAL_HOURS * 60 / 30) * 30;
+                            const h = Math.floor(totalMinutes / 60);
+                            const m = totalMinutes % 60;
+                            const startStr = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+                            const endH = h + 1;
+                            const endStr = `${String(endH).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+                            setNewDate(dateStr);
+                            setNewStart(startStr);
+                            setNewEnd(endStr);
+                            setShowModal(true);
+                          }}
+                        >
+                          {Array.from({ length: TOTAL_HOURS }, (_, i) => (
+                            <div key={i} style={{ top: `${i * ROW_PX}px` }} className="absolute w-full border-t border-border/40" />
+                          ))}
+                          {Array.from({ length: TOTAL_HOURS }, (_, i) => (
+                            <div key={`h${i}`} style={{ top: `${i * ROW_PX + ROW_PX / 2}px` }} className="absolute w-full border-t border-border/20 border-dashed" />
+                          ))}
+
+                          {dayAppts.map((a) => {
+                            const top    = topPercent(a.startTime);
+                            const height = heightPercent(a.startTime, a.endTime);
+                            return (
+                              <div
+                                key={a.id}
+                                data-appointment="1"
+                                className={clsx(
+                                  'group absolute left-1 right-1 z-10 cursor-pointer overflow-hidden rounded-md border px-1.5 py-1 transition-opacity hover:opacity-90',
+                                  STATUS_COLOR[a.status]
+                                )}
+                                style={{ top: `${top}%`, height: `${height}%`, minHeight: '22px' }}
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <p className="truncate text-[11px] font-semibold leading-tight">{a.title}</p>
+                                <p className="text-[10px] leading-tight opacity-75">{a.startTime}–{a.endTime}</p>
+                                {a.contactName && (
+                                  <p className="truncate text-[10px] leading-tight opacity-60">{a.contactName}</p>
+                                )}
+                                <button
+                                  data-appointment="1"
+                                  onClick={(e) => { e.stopPropagation(); void handleCancel(a.id); }}
+                                  className="absolute right-1 top-1 hidden rounded p-0.5 hover:bg-black/20 group-hover:flex"
+                                  title="Cancelar"
+                                >
+                                  <Trash2 size={10} />
+                                </button>
+                              </div>
+                            );
+                          })}
+
+                          {(gcByDate[dateStr] ?? []).filter(e => !e.allDay).map((e) => {
+                            const top    = topPercent(e.start);
+                            const height = heightPercent(e.start, e.end);
+                            return (
+                              <div
+                                key={`gc-${e.id}`}
+                                data-appointment="1"
+                                className="absolute z-10 overflow-hidden rounded-md border px-1.5 py-1 opacity-80 transition-opacity hover:opacity-100"
+                                style={{
+                                  top: `${top}%`,
+                                  height: `${height}%`,
+                                  minHeight: '22px',
+                                  left: '4px',
+                                  right: '4px',
+                                  backgroundColor: 'rgba(30, 100, 210, 0.25)',
+                                  borderColor: 'rgba(66, 133, 244, 0.6)',
+                                }}
+                                title={`Google: ${e.title}`}
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <p className="text-[10px] leading-tight text-blue-300">📅 {e.title}</p>
+                                <p className="text-[10px] leading-tight text-blue-400/70">{e.start}–{e.end}</p>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+            </div>
+          </div>
         </div>
       </div>
 
       {/* ── New Appointment Modal ── */}
       {showModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 flex items-end justify-center p-0 sm:items-center sm:p-4">
           <div className="absolute inset-0 bg-black/60" onClick={() => setShowModal(false)} />
-          <div className="relative bg-card border border-border rounded-2xl shadow-2xl w-full max-w-md">
+          <div className="relative max-h-[92dvh] w-full overflow-y-auto rounded-t-3xl border border-border bg-card pb-safe shadow-2xl sm:max-w-md sm:rounded-2xl">
             <div className="flex items-center justify-between px-5 py-4 border-b border-border">
               <h2 className="text-sm font-semibold text-text-primary">Novo compromisso</h2>
               <button onClick={() => setShowModal(false)} className="p-1.5 text-text-muted hover:text-text-primary rounded-lg hover:bg-surface">

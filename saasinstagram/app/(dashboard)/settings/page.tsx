@@ -761,9 +761,34 @@ export default function SettingsPage() {
     <div className="flex flex-col h-full overflow-hidden">
       <Header title={isEnglish ? 'Settings' : 'Configurações'} />
 
+      {/* Mobile tab nav — visible only below lg */}
+      <div className="lg:hidden shrink-0 border-b border-border overflow-x-auto">
+        <div className="flex gap-1.5 px-3 py-2.5 w-max min-w-full">
+          {sections.map((section) => {
+            const Icon = section.icon;
+            const active = activeSection === section.id;
+            return (
+              <button
+                key={section.id}
+                onClick={() => setActiveSection(section.id)}
+                className={clsx(
+                  'flex items-center gap-1.5 whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-medium transition-colors shrink-0',
+                  active
+                    ? 'bg-accent text-white'
+                    : 'text-text-secondary bg-surface hover:text-text-primary'
+                )}
+              >
+                <Icon size={12} className="shrink-0" />
+                {section.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
       <div className="flex flex-1 overflow-hidden">
-        {/* Sidebar nav */}
-        <div className="w-[200px] shrink-0 border-r border-border p-3 space-y-0.5 overflow-y-auto">
+        {/* Sidebar nav — desktop only */}
+        <div className="hidden lg:block w-[200px] shrink-0 border-r border-border p-3 space-y-0.5 overflow-y-auto">
           {sections.map((section) => {
             const Icon = section.icon;
             const active = activeSection === section.id;
@@ -786,7 +811,7 @@ export default function SettingsPage() {
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-6">
+        <div className="flex-1 overflow-y-auto p-4 md:p-6">
           <div className="max-w-xl">
             <Card>
               {renderContent()}
