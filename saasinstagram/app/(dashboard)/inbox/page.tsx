@@ -125,6 +125,8 @@ export default function InboxPage() {
                   conversation={selectedConversation}
                   workspaceId={workspaceId ?? ''}
                   onStatusChange={handleStatusChange}
+                  onAutomationToggle={handleAutomationToggle}
+                  automationSaving={automationSaving}
                 />
               </div>
 
