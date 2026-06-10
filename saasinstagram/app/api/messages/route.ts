@@ -130,25 +130,29 @@ export async function POST(request: NextRequest) {
 
     const channelData = { id: channelSnap.docs[0].id, ...channelSnap.docs[0].data() } as MetaConnectedChannel;
 
-    // Outbound translation: translate operator's text to contact's language before sending
-    let textToSend = text;
-    let translatedTextValue: string | undefined;
+    try {
+      // Outbound translation — runs inside try so any failure falls back gracefully
+      let textToSend = text;
+      let translatedTextValue: string | undefined;
 
-    if (type === 'text' && text) {
-      const wsSnap = await db.collection('workspaces').doc(workspaceId).get();
-      const wsSettings = wsSnap.data()?.settings as { translationEnabled?: boolean } | undefined;
-      const contactLang = conversation.contactLanguage;
+      if (type === 'text' && text) {
+        try {
+          const wsSnap = await db.collection('workspaces').doc(workspaceId).get();
+          const wsSettings = wsSnap.data()?.settings as { translationEnabled?: boolean } | undefined;
+          const contactLang = conversation.contactLanguage;
 
-      if (wsSettings?.translationEnabled && contactLang) {
-        const translated = await translateText(text, contactLang);
-        if (translated && translated !== text) {
-          translatedTextValue = translated;
-          textToSend = translated;
+          if (wsSettings?.translationEnabled && contactLang) {
+            const translated = await translateText(text, contactLang);
+            if (translated && translated !== text) {
+              translatedTextValue = translated;
+              textToSend = translated;
+            }
+          }
+        } catch {
+          // Translation failed — send original text unchanged
         }
       }
-    }
 
-    try {
       // Send via Meta Graph API
       let externalMessageId: string | undefined;
       const accessToken = decryptIfNeeded(channelData.accessToken);
