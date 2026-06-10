@@ -8,6 +8,13 @@ import { findMatchingAiAutomation, findMatchingSendMessageAutomation, buildAutom
 import { resolveKnowledgeBlocks, formatKnowledgeContext } from '@/lib/knowledge/retrieval';
 import { classifyAndUpdateLead } from '@/lib/leads/classifier';
 import { buildScheduleContext } from '@/lib/appointments/context';
+import {
+  DEFAULT_CONTEXT_INTERACTIONS,
+  EXPANDED_CONTEXT_INTERACTIONS,
+  loadRecentConversationMessages,
+  refreshConversationSummary,
+  shouldExpandConversationContext,
+} from '@/lib/conversations/context-memory';
 import { normalizeMessengerMessage, normalizeWhatsAppMessage } from '@/lib/meta/normalizer';
 import { MetaGraphClient } from '@/lib/meta/graph';
 import { sendTextViaMeta, persistOutboundMessage } from '@/lib/meta/outbound';
@@ -21,6 +28,7 @@ import {
   extractWhatsAppStatuses,
 } from '@/lib/meta/webhook';
 import { generateChatCompletion } from '@/lib/openai/client';
+import { translateText, detectLanguage } from '@/lib/openai/translation';
 import { transcribeAudio } from '@/lib/openai/client';
 import { buildMessageHistory } from '@/lib/openai/prompts';
 import { getContactDisplayName, isPlaceholderContactName, normalizeContactUsername } from '@/lib/conversations/display';
@@ -74,6 +82,10 @@ function buildInstagramProfileUrl(username?: string | null) {
 
 function getMessagePreview(text?: string | null) {
   return text?.slice(0, 120) ?? null;
+}
+
+function isConversationAutomationPaused(conversation: Conversation) {
+  return conversation.aiHandoffRequested === true;
 }
 
 function pickContactName(contactId: string, name?: string | null, username?: string | null) {
@@ -263,10 +275,9 @@ async function ensureConversationForContact(params: EnsureConversationParams) {
       contact: mergeConversationContact(undefined, contact),
       status: 'open',
       priority: 'medium',
-      assignedTo: undefined,
-      assignedToName: undefined,
       tags: [],
       unreadCount: 0,
+      messageCount: 0,
       aiEnabled: false,
       aiHandoffRequested: false,
       source: 'dm',
@@ -358,6 +369,33 @@ async function ensureConversationForContact(params: EnsureConversationParams) {
   };
 }
 
+async function translateAndPatchMessage(params: {
+  db: Db;
+  messageId: string;
+  text: string;
+  targetLocale: string;
+  conversationRef: DocumentReference;
+}) {
+  try {
+    const [detected, translated] = await Promise.all([
+      detectLanguage(params.text),
+      translateText(params.text, params.targetLocale),
+    ]);
+
+    await params.db.collection('messages').doc(params.messageId).update({
+      translatedText: translated,
+      translationTargetLocale: params.targetLocale,
+      ...(detected ? { translationSourceLocale: detected } : {}),
+    });
+
+    if (detected) {
+      await params.conversationRef.update({ contactLanguage: detected });
+    }
+  } catch {
+    // non-critical — translation failure must never break message delivery
+  }
+}
+
 async function persistInboundMessage(params: {
   db: Db;
   conversation: Conversation;
@@ -392,6 +430,7 @@ async function persistInboundMessage(params: {
         fromAgent: params.message.direction === 'outbound',
         read: params.message.direction === 'outbound',
       },
+      messageCount: FieldValue.increment(1),
       updatedAt: now,
     }),
   ]);
@@ -552,6 +591,23 @@ async function runSendMessageAutomation(params: {
 }) {
   const { db, workspaceId, channel, connectedChannel, conversation, incomingText, requestId } = params;
 
+  if (isConversationAutomationPaused(conversation)) {
+    await saveLog(db, {
+      level: 'info',
+      category: 'automation',
+      event: 'conversation_automation_paused',
+      requestId,
+      workspaceId,
+      conversationId: conversation.id,
+      channelId: connectedChannel.id,
+      details: {
+        channel,
+        preview: getMessagePreview(incomingText),
+      },
+    });
+    return;
+  }
+
   let automationMatch: Awaited<ReturnType<typeof findMatchingSendMessageAutomation>> = null;
 
   try {
@@ -700,6 +756,24 @@ async function runAiAutomationReply(params: {
   requestId: string;
 }) {
   const { db, workspaceId, channel, connectedChannel, conversation, conversationRef, incomingText, incomingImageUrl, requestId } = params;
+
+  if (isConversationAutomationPaused(conversation)) {
+    await saveLog(db, {
+      level: 'info',
+      category: 'ai',
+      event: 'conversation_ai_paused',
+      requestId,
+      workspaceId,
+      conversationId: conversation.id,
+      channelId: connectedChannel.id,
+      details: {
+        channel,
+        preview: getMessagePreview(incomingText),
+      },
+    });
+    return;
+  }
+
   let automationMatch: Awaited<ReturnType<typeof findMatchingAiAutomation>> = null;
   // Declared outside try so the catch block can read them for rollback
   const currentMonth = new Date().toISOString().slice(0, 7); // "YYYY-MM"
@@ -805,16 +879,26 @@ async function runAiAutomationReply(params: {
       },
     });
 
-    const messagesSnap = await db
-      .collection('messages')
-      .where('conversationId', '==', conversation.id)
-      .get();
+    const expandContext = shouldExpandConversationContext(incomingText);
+    const contextInteractions = expandContext
+      ? EXPANDED_CONTEXT_INTERACTIONS
+      : DEFAULT_CONTEXT_INTERACTIONS;
+    const contextMessages = await loadRecentConversationMessages({
+      db,
+      conversationId: conversation.id,
+      interactions: contextInteractions,
+    });
 
     const history = buildMessageHistory(
-      messagesSnap.docs
-        .map((doc) => doc.data() as { text?: string; senderType: string; direction: string; createdAt?: string; type?: string; media?: { url?: string; mimeType?: string } })
-        .sort((left, right) => String(left.createdAt ?? '').localeCompare(String(right.createdAt ?? '')))
-        .slice(-20)
+      contextMessages
+        .map((message) => ({
+          text: message.text,
+          senderType: message.senderType,
+          direction: message.direction,
+          createdAt: message.createdAt,
+          type: message.type,
+          media: message.media,
+        }))
     );
 
     const knowledgeBlocks = await resolveKnowledgeBlocks({
@@ -831,6 +915,9 @@ async function runAiAutomationReply(params: {
     }).catch(() => '');
 
     const knowledgeContext = [
+      conversation.conversationSummary
+        ? `### Conversation summary\n${conversation.conversationSummary}`
+        : '',
       formatKnowledgeContext(knowledgeBlocks),
       scheduleContext,
     ].filter(Boolean).join('\n\n');
@@ -864,6 +951,16 @@ async function runAiAutomationReply(params: {
       model,
       maxTokens,
       temperature: 0.4,
+      usageContext: {
+        db,
+        workspaceId,
+        source: 'automation_reply',
+        metadata: {
+          automationId: automationMatch.automation.id,
+          conversationId: conversation.id,
+          channelId: connectedChannel.id,
+        },
+      },
       messages: history.length > 0 ? history : [fallbackMessage],
     });
 
@@ -946,8 +1043,26 @@ async function runAiAutomationReply(params: {
         preview: getMessagePreview(aiText),
         promptTokens: aiResult.promptTokens,
         completionTokens: aiResult.completionTokens,
+        contextInteractions,
       },
     });
+
+    const predictedMessageCount = (conversation.messageCount ?? 0) + 2;
+    const predictedConversation = {
+      ...conversation,
+      conversationSummary: conversation.conversationSummary,
+      messageCount: predictedMessageCount,
+    } as Conversation;
+
+    if (
+      predictedMessageCount >= DEFAULT_CONTEXT_INTERACTIONS * 2 &&
+      predictedMessageCount - (conversation.conversationSummaryMessageCount ?? 0) >= DEFAULT_CONTEXT_INTERACTIONS * 2
+    ) {
+      await refreshConversationSummary({
+        db,
+        conversation: predictedConversation,
+      }).catch(() => null);
+    }
   } catch (error) {
     // Roll back pre-incremented usage slots if AI failed after reservation
     if (slotReserved) {
@@ -1079,6 +1194,21 @@ async function processFetchedInstagramTextMessage(params: {
       source: 'igaa_fetch',
     },
   });
+
+  // Fire-and-forget inbound translation
+  void (async () => {
+    const wsSnap = await db.collection('workspaces').doc(workspaceId).get();
+    const settings = wsSnap.data()?.settings as { translationEnabled?: boolean; language?: string } | undefined;
+    if (settings?.translationEnabled && settings.language) {
+      void translateAndPatchMessage({
+        db,
+        messageId: message.id,
+        text: messageText,
+        targetLocale: settings.language,
+        conversationRef: ref,
+      }).catch(() => null);
+    }
+  })().catch(() => null);
 
   // Fire-and-forget lead classification (non-blocking)
   if (conversation.leadId) {
@@ -1283,6 +1413,23 @@ async function processMessagingEvent(params: {
     },
   });
 
+  // Fire-and-forget inbound translation
+  if (!isEcho && savedMessage.direction === 'inbound' && savedMessage.type === 'text' && savedMessage.text) {
+    void (async () => {
+      const wsSnap = await db.collection('workspaces').doc(workspaceId).get();
+      const settings = wsSnap.data()?.settings as { translationEnabled?: boolean; language?: string } | undefined;
+      if (settings?.translationEnabled && settings.language) {
+        void translateAndPatchMessage({
+          db,
+          messageId: savedMessage.id,
+          text: savedMessage.text!,
+          targetLocale: settings.language,
+          conversationRef: ref,
+        }).catch(() => null);
+      }
+    })().catch(() => null);
+  }
+
   const inboundText = messageForStorage.direction === 'inbound'
     ? messageForStorage.text?.trim()
     : undefined;
@@ -1381,7 +1528,7 @@ async function processWhatsAppMessage(params: {
       })
     : normalized;
 
-  await persistInboundMessage({
+  const savedWAMessage = await persistInboundMessage({
     db,
     conversation,
     conversationRef: ref,
@@ -1406,6 +1553,26 @@ async function processWhatsAppMessage(params: {
       channel: 'whatsapp',
     },
   });
+
+  // Fire-and-forget inbound translation
+  const waInboundText = messageForStorage.direction === 'inbound' && messageForStorage.type === 'text'
+    ? messageForStorage.text
+    : undefined;
+  if (waInboundText) {
+    void (async () => {
+      const wsSnap = await db.collection('workspaces').doc(workspaceId).get();
+      const settings = wsSnap.data()?.settings as { translationEnabled?: boolean; language?: string } | undefined;
+      if (settings?.translationEnabled && settings.language) {
+        void translateAndPatchMessage({
+          db,
+          messageId: savedWAMessage.id,
+          text: waInboundText,
+          targetLocale: settings.language,
+          conversationRef: ref,
+        }).catch(() => null);
+      }
+    })().catch(() => null);
+  }
 
   const incomingText = messageForStorage.direction === 'inbound'
     ? messageForStorage.text?.trim()

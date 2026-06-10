@@ -1,10 +1,12 @@
 export const dynamic = 'force-dynamic';
 import { type NextRequest, NextResponse } from 'next/server';
+import { FieldValue } from 'firebase-admin/firestore';
 import { getAdminFirestore } from '@/lib/firebase/admin';
 import { authenticateRequest } from '@/lib/firebase/request-auth';
 import { MetaGraphClient } from '@/lib/meta/graph';
 import { decryptIfNeeded } from '@/lib/utils/encryption';
 import { persistOutboundMessage, sendTextViaMeta } from '@/lib/meta/outbound';
+import { translateText } from '@/lib/openai/translation';
 import { getOwnedConversation } from '@/lib/workspaces/access';
 import type { Message, SendMessagePayload } from '@/types/message';
 import type { MetaConnectedChannel } from '@/types/meta';
@@ -45,12 +47,11 @@ export async function GET(request: NextRequest) {
     const snap = await db
       .collection('messages')
       .where('conversationId', '==', conversationId)
+      .orderBy('createdAt', 'asc')
+      .limitToLast(limit)
       .get();
 
-    const messages = snap.docs
-      .map((doc) => ({ id: doc.id, ...doc.data() }) as Message)
-      .sort((left, right) => left.createdAt.localeCompare(right.createdAt))
-      .slice(-limit);
+    const messages = snap.docs.map((doc) => ({ id: doc.id, ...doc.data() }) as Message);
     return NextResponse.json({ messages });
   } catch (error) {
     console.error('Get messages error:', error);
@@ -129,17 +130,35 @@ export async function POST(request: NextRequest) {
 
     const channelData = { id: channelSnap.docs[0].id, ...channelSnap.docs[0].data() } as MetaConnectedChannel;
 
+    // Outbound translation: translate operator's text to contact's language before sending
+    let textToSend = text;
+    let translatedTextValue: string | undefined;
+
+    if (type === 'text' && text) {
+      const wsSnap = await db.collection('workspaces').doc(workspaceId).get();
+      const wsSettings = wsSnap.data()?.settings as { translationEnabled?: boolean } | undefined;
+      const contactLang = conversation.contactLanguage;
+
+      if (wsSettings?.translationEnabled && contactLang) {
+        const translated = await translateText(text, contactLang);
+        if (translated && translated !== text) {
+          translatedTextValue = translated;
+          textToSend = translated;
+        }
+      }
+    }
+
     try {
       // Send via Meta Graph API
       let externalMessageId: string | undefined;
       const accessToken = decryptIfNeeded(channelData.accessToken);
       const client = new MetaGraphClient(accessToken);
 
-      if (type === 'text' && text) {
+      if (type === 'text' && textToSend) {
         const result = await sendTextViaMeta({
           channel: channelData,
           conversation,
-          text,
+          text: textToSend,
         });
         externalMessageId = result.externalMessageId;
       } else if (conversation.channel === 'whatsapp') {
@@ -185,6 +204,7 @@ export async function POST(request: NextRequest) {
               senderName: decodedToken.name ?? decodedToken.email ?? 'Agent',
               senderType: 'agent',
               text,
+              translatedText: translatedTextValue,
               workspaceId,
             })
           : ({
@@ -216,6 +236,7 @@ export async function POST(request: NextRequest) {
             fromAgent: true,
             read: true,
           },
+          messageCount: FieldValue.increment(1),
           updatedAt: now,
         });
       }
