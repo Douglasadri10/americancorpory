@@ -1,7 +1,7 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { clsx } from 'clsx';
 import { format } from 'date-fns';
-import { Check, CheckCheck, Clock, AlertCircle, Sparkles, Image, Video, FileText, MapPin, Mic } from 'lucide-react';
+import { Check, CheckCheck, Clock, AlertCircle, Sparkles, Image, Video, FileText, MapPin, Mic, Globe } from 'lucide-react';
 import type { Message } from '@/types/message';
 import { useWorkspaceLocale } from '@/components/providers/WorkspaceLocaleProvider';
 
@@ -127,8 +127,10 @@ export function MessageBubble({
   contactAvatar,
 }: MessageBubbleProps) {
   const { isEnglish, dateFnsLocale } = useWorkspaceLocale();
+  const [showOriginal, setShowOriginal] = useState(false);
   const isOutbound = message.direction === 'outbound';
   const isBot = message.senderType === 'bot';
+  const hasTranslation = !!message.translatedText && message.translatedText !== message.text;
 
   const timestamp = message.createdAt
     ? format(new Date(message.createdAt), 'HH:mm', { locale: dateFnsLocale })
@@ -202,9 +204,36 @@ export function MessageBubble({
 
           {/* Text */}
           {message.text && (
-            <p className="whitespace-pre-wrap break-words leading-relaxed">
-              {message.type === 'unsupported' ? (isEnglish ? 'Unsupported message type' : 'Tipo de mensagem não suportado') : message.text}
-            </p>
+            <>
+              <p className="whitespace-pre-wrap break-words leading-relaxed">
+                {message.type === 'unsupported'
+                  ? (isEnglish ? 'Unsupported message type' : 'Tipo de mensagem não suportado')
+                  : (showOriginal || !hasTranslation)
+                    ? message.text
+                    : message.translatedText}
+              </p>
+
+              {hasTranslation && (
+                <button
+                  onClick={() => setShowOriginal(v => !v)}
+                  className="mt-1 flex items-center gap-1 text-[10px] text-text-muted hover:text-text-secondary transition-colors"
+                >
+                  <Globe size={9} />
+                  {showOriginal
+                    ? (isEnglish ? 'Show translation' : 'Ver tradução')
+                    : (isEnglish ? 'Show original' : 'Ver original')}
+                </button>
+              )}
+
+              {isOutbound && hasTranslation && (
+                <div className="flex items-center gap-1 mt-0.5">
+                  <Globe size={9} className="text-text-muted opacity-60" />
+                  <span className="text-[10px] text-text-muted italic opacity-60">
+                    {isEnglish ? 'Auto-translated' : 'Traduzido automaticamente'}
+                  </span>
+                </div>
+              )}
+            </>
           )}
 
           {/* Reaction */}

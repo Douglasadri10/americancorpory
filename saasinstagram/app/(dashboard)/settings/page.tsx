@@ -42,6 +42,7 @@ export default function SettingsPage() {
 
   // AI settings state
   const [aiEnabled, setAiEnabled] = useState(false);
+  const [translationEnabled, setTranslationEnabled] = useState(false);
   const [aiSystemPrompt, setAiSystemPrompt] = useState(DEFAULT_AI_PROMPT_PT);
   const [aiPersonality, setAiPersonality] = useState('');
 
@@ -133,6 +134,7 @@ export default function SettingsPage() {
           const s = data.workspace.settings as Record<string, unknown> | undefined;
           if (s) {
             if (typeof s.aiEnabled === 'boolean') setAiEnabled(s.aiEnabled);
+            if (typeof s.translationEnabled === 'boolean') setTranslationEnabled(s.translationEnabled);
             if (typeof s.aiPersonality === 'string') setAiPersonality(s.aiPersonality);
             if (typeof s.timezone === 'string') setTimezone(s.timezone);
             if (typeof s.language === 'string') setLanguage(s.language);
@@ -251,6 +253,7 @@ export default function SettingsPage() {
 
       const settings: Record<string, unknown> = {
         aiEnabled,
+        translationEnabled,
         aiPersonality: aiPersonality || aiSystemPrompt,
         aiModel: 'gpt-4o-mini',
         timezone,
@@ -606,6 +609,17 @@ export default function SettingsPage() {
               onChange={setAiEnabled}
               label={isEnglish ? 'Enable AI globally' : 'Habilitar IA globalmente'}
               description={isEnglish ? 'Allow automations and agents to use AI for replies' : 'Permite que automações e agentes usem IA para responder'}
+            />
+
+            <Toggle
+              value={translationEnabled}
+              onChange={setTranslationEnabled}
+              label={isEnglish ? 'Real-time translation' : 'Tradução em tempo real'}
+              description={
+                isEnglish
+                  ? 'Automatically translate inbound messages to your language and outbound replies to the contact\'s language'
+                  : 'Traduz automaticamente mensagens recebidas para seu idioma e respostas enviadas para o idioma do contato'
+              }
             />
 
             {aiEnabled && (

@@ -1,4 +1,4 @@
-import type { Firestore } from 'firebase-admin/firestore';
+import { FieldValue, type Firestore } from 'firebase-admin/firestore';
 import { MetaGraphClient } from '@/lib/meta/graph';
 import { decryptIfNeeded } from '@/lib/utils/encryption';
 import type { Conversation } from '@/types/conversation';
@@ -25,6 +25,7 @@ interface PersistOutboundMessageParams {
   senderName: string;
   senderType: Message['senderType'];
   text: string;
+  translatedText?: string;
   workspaceId: string;
 }
 
@@ -84,6 +85,7 @@ export async function persistOutboundMessage(params: PersistOutboundMessageParam
     direction: 'outbound',
     type: params.messageType ?? 'text',
     text: params.text,
+    translatedText: params.translatedText,
     senderId: params.senderId,
     senderName: params.senderName,
     senderType: params.senderType,
@@ -106,10 +108,10 @@ export async function persistOutboundMessage(params: PersistOutboundMessageParam
         fromAgent: true,
         read: true,
       },
+      messageCount: FieldValue.increment(1),
       updatedAt: now,
     }),
   ]);
 
   return message;
 }
-

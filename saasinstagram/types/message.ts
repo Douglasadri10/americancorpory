@@ -58,6 +58,9 @@ export interface Message {
   type: MessageType;
   // Text content
   text?: string;
+  translatedText?: string;
+  translationTargetLocale?: string;
+  translationSourceLocale?: string;
   // Rich media
   media?: MessageMedia;
   location?: MessageLocation;

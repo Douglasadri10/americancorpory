@@ -1,18 +1,5 @@
 export type PlanId = 'free' | 'starter' | 'pro' | 'business';
 
-export type WorkspaceMemberRole = 'owner' | 'admin' | 'agent' | 'viewer';
-
-export interface WorkspaceMember {
-  uid: string;
-  email: string;
-  displayName: string;
-  photoURL?: string;
-  role: WorkspaceMemberRole;
-  joinedAt: string; // ISO date string
-  invitedBy?: string;
-  isActive: boolean;
-}
-
 export interface WorkspacePlan {
   id: PlanId;
   stripeCustomerId?: string;
@@ -32,10 +19,36 @@ export interface WorkspaceLimits {
   aiInteractionsPerMonth: number; // -1 = unlimited
 }
 
+export interface WorkspaceAlertChannels {
+  email: boolean;
+  whatsapp: boolean;
+  sms: boolean;
+}
+
+export interface WorkspaceAlertRecipients {
+  email?: string;
+  phone?: string;
+}
+
+export interface WorkspaceAlertEvents {
+  accountCreated: boolean;
+  leadWon: boolean;
+  supportTicketOpened: boolean;
+}
+
+export interface WorkspaceNotificationSettings {
+  newConversation: boolean;
+  newMessage: boolean;
+  alertChannels?: WorkspaceAlertChannels;
+  alertRecipients?: WorkspaceAlertRecipients;
+  alertEvents?: WorkspaceAlertEvents;
+}
+
 export interface WorkspaceSettings {
   timezone: string;
   language: string;
   aiEnabled?: boolean;
+  translationEnabled?: boolean;
   aiPersonality?: string;
   aiModel?: string;
   businessHours?: {
@@ -45,15 +58,7 @@ export interface WorkspaceSettings {
     };
     outsideHoursMessage?: string;
   };
-  autoAssignment?: {
-    enabled: boolean;
-    strategy: 'round_robin' | 'least_busy' | 'random';
-  };
-  notifications?: {
-    newConversation: boolean;
-    newMessage: boolean;
-    assignedToMe: boolean;
-  };
+  notifications?: WorkspaceNotificationSettings;
 }
 
 export interface GoogleCalendarIntegration {
@@ -75,7 +80,6 @@ export interface Workspace {
   slug: string;
   logoURL?: string;
   ownerUid: string;
-  members: WorkspaceMember[];
   plan: WorkspacePlan;
   limits: WorkspaceLimits;
   settings: WorkspaceSettings;
@@ -87,20 +91,10 @@ export interface Workspace {
     conversationsThisMonth: number;
     aiMessagesThisMonth: number;
     aiInteractionsThisMonth: number;
+    aiInputTokensTotal?: number;
+    aiOutputTokensTotal?: number;
+    aiTokensTotal?: number;
+    aiLastTokenUsageAt?: string;
     lastResetAt: string;
   };
-}
-
-export interface WorkspaceInvite {
-  id: string;
-  workspaceId: string;
-  workspaceName: string;
-  email: string;
-  role: WorkspaceMemberRole;
-  invitedBy: string;
-  invitedByName: string;
-  token: string;
-  expiresAt: string;
-  acceptedAt?: string;
-  createdAt: string;
 }

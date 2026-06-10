@@ -40,16 +40,21 @@ export interface Conversation {
   contact: ConversationParticipant;
   status: ConversationStatus;
   priority: ConversationPriority;
-  assignedTo?: string;       // agent uid
-  assignedToName?: string;
+  assignedTo?: string;       // legacy field kept for backward compatibility
+  assignedToName?: string;   // legacy field kept for backward compatibility
   tags: ConversationTag[];
   lastMessage?: ConversationLastMessage;
   unreadCount: number;
+  messageCount?: number;
   // AI automation
   aiEnabled: boolean;
   aiHandoffRequested: boolean;
+  conversationSummary?: string;
+  conversationSummaryUpdatedAt?: string;
+  conversationSummaryMessageCount?: number;
   // Metadata
   source?: string;   // e.g. "comment_reply", "dm", "chatbot"
+  contactLanguage?: string;  // BCP-47 code detected from contact messages
   notes?: string;
   customFields?: Record<string, string | number | boolean>;
   // Lead linkage
@@ -65,7 +70,6 @@ export interface Conversation {
 export interface ConversationFilter {
   status?: ConversationStatus | 'all';
   channel?: Channel | 'all';
-  assignedTo?: string | 'me' | 'unassigned';
   priority?: ConversationPriority;
   tags?: string[];
   search?: string;
