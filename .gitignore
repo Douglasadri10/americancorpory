@@ -1,0 +1,57 @@
+# Dependency and build output
+node_modules/
+**/node_modules/
+.next/
+**/.next/
+.vercel/
+**/.vercel/
+out/
+**/out/
+build/
+**/build/
+coverage/
+**/coverage/
+DerivedData/
+**/DerivedData/
+Pods/
+**/Pods/
+*.ipa
+*.xcarchive
+
+# Local environment files; keep only explicit examples
+.env
+.env.*
+**/.env
+**/.env.*
+!.env.example
+!.env.*.example
+!**/.env.example
+!**/.env.*.example
+
+# Firebase and private app configuration
+.firebase/
+**/.firebase/
+firebase-debug.log
+firebase-debug.*.log
+**/GoogleService-Info.plist
+**/google-services.json
+**/*service-account*.json
+**/*firebase-adminsdk*.json
+
+# Signing material and private keys
+*.pem
+*.key
+*.p8
+*.p12
+*.pfx
+*.mobileprovision
+*.jks
+*.keystore
+
+# Logs, temporary files, and OS metadata
+*.log
+logs/
+**/logs/
+.tmp/
+tmp/
+.DS_Store
